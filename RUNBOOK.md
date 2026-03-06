@@ -14,6 +14,7 @@ Loop startup sequence
 4. Read `PROGRESS.md` for last failure context.
 5. Execute only that task.
 6. Record outcome in `PROGRESS.md`.
+7. Prefer running via `npm run loop:run` so task execution stays in TypeScript.
 
 Task execution rules
 - Keep scope atomic. If output becomes large or multi-step, split before tasking.
@@ -60,3 +61,8 @@ Next action format
   - next best task id
   - fallback if blocked
   - expected owner for follow-up
+
+Command examples
+- Check queue: `npm run loop:status`
+- Run one task: `npm run loop:run`
+- Run explicit task: `npm run loop:run -- --task-id T-002`

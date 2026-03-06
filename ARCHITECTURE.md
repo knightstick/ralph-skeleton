@@ -21,11 +21,20 @@ Core modules (target)
 - `Controller`
   - Orchestrates one loop iteration end-to-end.
   - Enforces fail-fast rules and deterministic transitions.
+- `src/ralph-loop.ts`
+  - CLI entrypoint that implements the loop controller in TypeScript.
+  - Supports `status` and `run` actions.
+
+Execution stack
+- `package.json` scripts:
+  - `npm run loop:status` → `STATUS` view.
+  - `npm run loop:run` → single-iteration execution.
+  - `npm run typecheck` → static validation of loop implementation.
 
 Data flow
 1. Controller reads `TASKS.md` and `PROGRESS.md`.
 2. Selector computes next task.
-3. AgentInvoker runs only that task.
+3. `src/ralph-loop.ts` runs only that task.
 4. Verifier evaluates declared checks.
 5. StateRecorder persists status and progress entry.
 6. Loop ends on queue exhaustion, hard failure threshold, or manual stop.

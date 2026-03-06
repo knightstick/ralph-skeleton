@@ -1,0 +1,17 @@
+{
+  "name": "ralph-loop-harness",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "loop": "tsx src/ralph-loop.ts",
+    "loop:status": "npm run loop -- status",
+    "loop:run": "npm run loop -- run",
+    "loop:run:task": "npm run loop -- run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.3"
+  }
+}
