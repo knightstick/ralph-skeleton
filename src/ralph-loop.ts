@@ -257,7 +257,7 @@ function normalizeCommandOutput(value: unknown): string {
   return String(value);
 }
 
-function runCommand(command: string, timeoutSeconds = 120): CheckResult {
+export function runCommand(command: string, timeoutSeconds = 120): CheckResult {
   try {
     const output = execSync(command, {
       cwd: REPO_ROOT,
@@ -293,7 +293,7 @@ function runCommand(command: string, timeoutSeconds = 120): CheckResult {
   }
 }
 
-function runCheck(check: Check): CheckResult {
+export function runCheck(check: Check): CheckResult {
   const type = ensureString(check.type ?? "command", `acceptance.type`);
   const required = check.required ?? true;
   if (type === "command") {

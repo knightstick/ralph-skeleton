@@ -29,7 +29,7 @@ Format
 ```yaml
 - id: T-000
   title: Short task title
-  status: pending
+  status: done
   priority: 10
   dependencies: [T-000]
   owner: agent
@@ -90,7 +90,7 @@ Tasks
     Define and implement a parser in the harness for TASKS.md task objects with strict field validation.
   acceptance:
     - type: command
-      command: echo "pending"
+      command: npx tsx -e "import { parseTasks } from './src/ralph-loop.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
       required: true
       timeout_seconds: 10
   notes: Follow-up task for Phase 2.
@@ -105,14 +105,14 @@ Tasks
     Add command execution with structured exit-code reporting and timeout handling for lint/typecheck/tests/build.
   acceptance:
     - type: command
-      command: echo "pending"
+      command: npx tsx -e "import { runCheck } from './src/ralph-loop.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
       required: true
-      timeout_seconds: 10
+      timeout_seconds: 20
   notes: Follow-up task for Phase 2.
 
 - id: T-004
   title: Implement bootstrap runbook and failure playbook
-  status: pending
+  status: done
   priority: 30
   dependencies: [T-001]
   owner: agent
@@ -120,7 +120,7 @@ Tasks
     Publish operational instructions for loop starts, context loading, and recovery from failed checks.
   acceptance:
     - type: command
-      command: echo "pending"
+      command: test -f RUNBOOK.md && test -f ARCHITECTURE.md
       required: true
       timeout_seconds: 10
   notes: Provides operator guidance while harness matures.
