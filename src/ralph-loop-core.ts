@@ -1,15 +1,20 @@
 import yaml from "js-yaml";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 export type Status = "pending" | "in_progress" | "blocked" | "done" | "failed";
-export type CheckType = "command" | "file_exists";
+export type CheckType = "command" | "file_exists" | "http_status" | "http_json" | "http_contains";
 export type FailureCategory = "validation" | "execution" | "environment" | "agent" | "unsupported_check" | "none";
 
 export interface Check {
   type?: CheckType | string;
   command?: string;
   path?: string;
+  url?: string;
+  status_code?: number;
+  contains?: string;
+  json_path?: string;
+  equals?: string | number | boolean | null;
   required?: boolean;
   timeout_seconds?: number;
   [key: string]: unknown;
@@ -73,7 +78,7 @@ function ensureCheckArray(value: unknown, taskId: string): Check[] {
 
 function validateCheck(check: Check, taskId: string): void {
   const type = ensureString(check.type ?? "command", `acceptance.type for ${taskId}`);
-  if (!["command", "file_exists"].includes(type)) {
+  if (!["command", "file_exists", "http_status", "http_json", "http_contains"].includes(type)) {
     throw new Error(`Invalid check type "${type}" for task ${taskId}: unsupported`);
   }
   if (type === "command") {
@@ -81,6 +86,21 @@ function validateCheck(check: Check, taskId: string): void {
   }
   if (type === "file_exists") {
     ensureString(check.path, `acceptance.path for ${taskId}`);
+  }
+  if (type === "http_status" || type === "http_json" || type === "http_contains") {
+    ensureString(check.url, `acceptance.url for ${taskId}`);
+  }
+  if (type === "http_status") {
+    ensureInteger(check.status_code ?? 200, `acceptance.status_code for ${taskId}`);
+  }
+  if (type === "http_contains") {
+    ensureString(check.contains, `acceptance.contains for ${taskId}`);
+  }
+  if (type === "http_json") {
+    ensureString(check.json_path, `acceptance.json_path for ${taskId}`);
+    if (!Object.prototype.hasOwnProperty.call(check, "equals")) {
+      throw new Error(`Invalid acceptance.equals for ${taskId}: expected explicit comparison value`);
+    }
   }
   if (check.required !== undefined && typeof check.required !== "boolean") {
     throw new Error(`Invalid acceptance.required for task ${taskId}: expected boolean`);
@@ -199,6 +219,53 @@ function runCommand(command: string, timeoutSeconds = 120): CheckResult {
   }
 }
 
+function getTimeoutMs(check: Check): number {
+  const timeout = Number.isFinite(check.timeout_seconds as number) ? Number(check.timeout_seconds) : 120;
+  return timeout * 1000;
+}
+
+function readJsonPath(payload: unknown, jsonPath: string): unknown {
+  return jsonPath.split(".").filter(Boolean).reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object" || !(segment in current)) return undefined;
+    return (current as Record<string, unknown>)[segment];
+  }, payload);
+}
+
+function httpFailureOutput(url: string, detail: string): string {
+  return `url=${url}\n${detail}`;
+}
+
+function fetchViaCurl(url: string, timeoutMs: number): { status: number; body: string } {
+  const output = execFileSync(
+    "curl",
+    [
+      "-sS",
+      "-L",
+      "--max-time",
+      String(Math.max(1, Math.ceil(timeoutMs / 1000))),
+      "-w",
+      "\n__STATUS__:%{http_code}",
+      url,
+    ],
+    {
+      timeout: timeoutMs,
+      stdio: "pipe",
+      encoding: "utf8",
+    },
+  );
+
+  const marker = "\n__STATUS__:";
+  const splitIndex = output.lastIndexOf(marker);
+  if (splitIndex === -1) {
+    throw new Error(`curl response missing status marker for ${url}`);
+  }
+
+  return {
+    body: output.slice(0, splitIndex),
+    status: Number.parseInt(output.slice(splitIndex + marker.length).trim(), 10),
+  };
+}
+
 export function runCheck(check: Check): CheckResult {
   const type = ensureString(check.type ?? "command", `acceptance.type`);
   const required = check.required ?? true;
@@ -222,6 +289,113 @@ export function runCheck(check: Check): CheckResult {
       path,
       output: `exists=${exists}`,
     };
+  }
+  if (type === "http_status") {
+    const url = String(check.url ?? "");
+    const expectedStatus = Number(check.status_code ?? 200);
+    try {
+      const payload = fetchViaCurl(url, getTimeoutMs(check));
+      const passed = payload.status === expectedStatus;
+      return {
+        name: type,
+        status: passed ? "pass" : required ? "fail" : "skip",
+        exit_code: passed ? 0 : 1,
+        required,
+        failure_category: passed ? "none" : required ? "execution" : "none",
+        command: `GET ${url}`,
+        output: passed ? `status=${payload.status}` : httpFailureOutput(url, `expected status ${expectedStatus}, got ${payload.status}\n${payload.body}`),
+      };
+    } catch (error) {
+      const e = error as { stdout?: unknown; stderr?: unknown; message?: string };
+      return {
+        name: type,
+        status: required ? "fail" : "skip",
+        exit_code: 1,
+        required,
+        failure_category: required ? "execution" : "none",
+        command: `GET ${url}`,
+        output: httpFailureOutput(
+          url,
+          [normalizeCommandOutput(e.stdout), normalizeCommandOutput(e.stderr), e.message ?? ""].filter(Boolean).join("\n"),
+        ),
+      };
+    }
+  }
+  if (type === "http_contains" || type === "http_json") {
+    const url = String(check.url ?? "");
+    try {
+      const payload = fetchViaCurl(url, getTimeoutMs(check));
+
+      if (payload.status >= 400) {
+        return {
+          name: type,
+          status: required ? "fail" : "skip",
+          exit_code: 1,
+          required,
+          failure_category: required ? "execution" : "none",
+          command: `GET ${url}`,
+          output: httpFailureOutput(url, `received HTTP ${payload.status}\n${payload.body}`),
+        };
+      }
+
+      if (type === "http_contains") {
+        const expected = String(check.contains ?? "");
+        const passed = payload.body.includes(expected);
+        return {
+          name: type,
+          status: passed ? "pass" : required ? "fail" : "skip",
+          exit_code: passed ? 0 : 1,
+          required,
+          failure_category: passed ? "none" : required ? "execution" : "none",
+          command: `GET ${url}`,
+          output: passed ? `contains=${expected}` : httpFailureOutput(url, `response did not include ${expected}`),
+        };
+      }
+
+      let json: unknown;
+      try {
+        json = JSON.parse(payload.body);
+      } catch (error) {
+        return {
+          name: type,
+          status: required ? "fail" : "skip",
+          exit_code: 1,
+          required,
+          failure_category: required ? "execution" : "none",
+          command: `GET ${url}`,
+          output: httpFailureOutput(url, `invalid JSON: ${String(error)}`),
+        };
+      }
+
+      const actual = readJsonPath(json, String(check.json_path ?? ""));
+      const expected = check.equals;
+      const passed = actual === expected;
+      return {
+        name: type,
+        status: passed ? "pass" : required ? "fail" : "skip",
+        exit_code: passed ? 0 : 1,
+        required,
+        failure_category: passed ? "none" : required ? "execution" : "none",
+        command: `GET ${url}`,
+        output: passed
+          ? `json_path=${String(check.json_path)} equals=${String(expected)}`
+          : httpFailureOutput(url, `json_path=${String(check.json_path)} expected=${String(expected)} actual=${String(actual)}`),
+      };
+    } catch (error) {
+      const e = error as { stdout?: unknown; stderr?: unknown; message?: string };
+      return {
+        name: type,
+        status: required ? "fail" : "skip",
+        exit_code: 1,
+        required,
+        failure_category: required ? "execution" : "none",
+        command: `GET ${url}`,
+        output: httpFailureOutput(
+          url,
+          [normalizeCommandOutput(e.stdout), normalizeCommandOutput(e.stderr), e.message ?? ""].filter(Boolean).join("\n"),
+        ),
+      };
+    }
   }
   return {
     name: String(type),

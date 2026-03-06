@@ -686,3 +686,52 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+- timestamp_utc: 2026-03-06T11:12:00Z
+  task_id: T-010
+  agent_prompt: Manual implementation | Add deployable Railway backend and Vercel frontend workspaces.
+  result: success
+  failure_category: none
+  checks:
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run api:build
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run web:build
+      required: true
+  stdout_excerpt: |
+    Added `apps/api` with a Fastify `/health` endpoint for Railway and `apps/web` with a Next.js status page for Vercel.
+    Local runtime verification succeeded with the frontend rendering live backend health data.
+  ready_after: [T-011]
+  notes: |
+    Completed directly by user request outside the normal Ralph loop.
+
+- timestamp_utc: 2026-03-06T11:13:00Z
+  task_id: T-011
+  agent_prompt: Manual implementation | Add deployment automation and HTTP verifier support.
+  result: success
+  failure_category: none
+  checks:
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run typecheck
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node --import tsx --input-type=module -e "runCheck http self-test"
+      required: true
+  stdout_excerpt: |
+    Added `ci` and `deploy-smoke` GitHub workflows plus `railway.json`.
+    Verified new `http_status`, `http_json`, and `http_contains` checks against the running local API/web stack in an elevated sandbox.
+  ready_after: []
+  notes: |
+    Completed directly by user request outside the normal Ralph loop.

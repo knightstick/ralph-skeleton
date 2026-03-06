@@ -1,0 +1,149 @@
+:root {
+  color-scheme: light;
+  --bg: #f5efe1;
+  --panel: rgba(255, 252, 244, 0.88);
+  --text: #122118;
+  --muted: #4c5f52;
+  --line: rgba(18, 33, 24, 0.12);
+  --healthy: #1f7a4d;
+  --degraded: #9f4427;
+  --accent: #d9b75b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family: Georgia, "Times New Roman", serif;
+  background:
+    radial-gradient(circle at top, rgba(217, 183, 91, 0.24), transparent 32%),
+    linear-gradient(180deg, #f8f3e7 0%, var(--bg) 52%, #ede4cf 100%);
+  color: var(--text);
+}
+
+body {
+  min-height: 100vh;
+}
+
+.shell {
+  width: min(960px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: 4rem 0 5rem;
+}
+
+.hero {
+  margin-bottom: 2rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.75rem, 8vw, 5.5rem);
+  line-height: 0.95;
+  max-width: 10ch;
+}
+
+.lede {
+  max-width: 44rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.status-card {
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 24px 80px rgba(64, 48, 24, 0.12);
+}
+
+.status-card.healthy {
+  border-color: rgba(31, 122, 77, 0.25);
+}
+
+.status-card.degraded {
+  border-color: rgba(159, 68, 39, 0.24);
+}
+
+.status-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.label,
+dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.status-header h2 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  text-transform: lowercase;
+}
+
+.pill {
+  margin: 0;
+  padding: 0.6rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(18, 33, 24, 0.08);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.75rem 0;
+}
+
+.status-grid div {
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+dd {
+  margin: 0.35rem 0 0;
+  font-size: 1.15rem;
+}
+
+.message {
+  margin: 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 700px) {
+  .shell {
+    padding-top: 2.5rem;
+  }
+
+  .status-header {
+    flex-direction: column;
+  }
+
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+}

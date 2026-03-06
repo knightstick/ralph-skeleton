@@ -1,68 +1,70 @@
 # ARCHITECTURE.md
 
 Current scope
-- This document defines Ralph loop Harness v0.1 (state-first, task-driven, verification-first).
+- This document defines Ralph loop Harness v0.2: task-driven orchestration plus a deployable backend/frontend skeleton.
 
-Core modules (target)
+Core modules
 - `Memory`
-  - Reads/writes `TASKS.md`, `PROGRESS.md`.
-  - Validates task schema and status transitions.
+  - Reads and writes `TASKS.md` and `PROGRESS.md`.
 - `Selector`
-  - Computes the executable candidate set by status/dependencies.
-  - Delegates final task choice to a fresh agent invocation.
+  - Computes executable tasks from status and dependencies.
+  - Delegates final choice to a fresh Codex invocation.
 - `AgentInvoker`
-  - Executes the selected task in a fresh, narrow context.
-  - Provides strict minimal prompt and expected output.
+  - Executes the selected task in a fresh session.
 - `Verifier`
-  - Runs task-declared checks (`lint`, `typecheck`, `tests`, `build`, smoke endpoints, etc.).
-  - Normalizes output to pass/fail plus reason.
+  - Runs `command`, `file_exists`, `http_status`, `http_json`, and `http_contains` checks.
 - `StateRecorder`
-  - Updates `TASKS.md` and appends to `PROGRESS.md`.
-  - Never rewrites historical progress entries.
+  - Persists status transitions and append-only progress.
 - `Controller`
-  - Orchestrates one loop iteration end-to-end.
-  - Enforces fail-fast rules and deterministic transitions.
+  - Orchestrates one iteration end to end.
+
+Application surfaces
 - `src/ralph-loop.ts`
-  - CLI entrypoint that implements the loop controller in TypeScript.
-  - Supports `status`, `once`, and `run` actions.
+  - Root CLI for loop status, single-iteration, and full-loop execution.
+- `apps/api`
+  - Fastify backend for Railway.
+  - Exposes `/health` as the canonical public smoke endpoint.
+- `apps/web`
+  - Next.js frontend for Vercel.
+  - Renders live backend status using `API_BASE_URL`.
+- `scripts/deploy-smoke.mjs`
+  - Polls the public Railway and Vercel URLs after deploy.
 
 Execution stack
-- `package.json` scripts:
-  - `npm run loop:status` → `STATUS` view.
-  - `npm run loop:run` → full outer-loop execution until queue exhaustion or failure.
-  - `npm run once` → single-iteration execution.
-  - `npm run typecheck` → static validation of loop implementation.
-  - `npm run loop:status` → queue inspection before execution.
+- Root package scripts handle the Ralph harness and workspace orchestration.
+- `npm run api:*` targets the Railway backend workspace.
+- `npm run web:*` targets the Vercel frontend workspace.
+- GitHub Actions `ci` validates the repo before deploy.
+- GitHub Actions `deploy-smoke` verifies the deployed URLs after `ci` on `main`.
 
 Data flow
 1. Controller reads `TASKS.md` and `PROGRESS.md`.
 2. Selector computes executable candidates.
-3. A fresh Codex selector chooses one candidate to run.
-4. `src/ralph-loop.ts` runs the chosen task.
-5. Verifier evaluates declared checks.
-6. StateRecorder persists status and progress entry.
-7. `run` repeats until queue exhaustion or a failed iteration; `once` stops after a single task.
+3. Fresh Codex chooses one candidate.
+4. Agent executes the task.
+5. Verifier runs task-declared checks.
+6. StateRecorder persists status and progress.
+7. Provider deploys are validated by public smoke checks.
 
 State artifacts
 - `TASKS.md`
-  - durable planning queue + deterministic schema.
+  - durable planning queue and acceptance contract
 - `PROGRESS.md`
-  - append-only execution log.
+  - append-only execution log
 - `RUNBOOK.md`
-  - operational procedure and recovery logic.
-- `ARCHITECTURE.md`
-  - this file.
+  - operating procedure and recovery logic
+- `railway.json`
+  - Railway deployment configuration
+- `.github/workflows/*.yml`
+  - CI and post-deploy smoke automation
 
 Control invariants
-- No task is considered complete without all required checks passing.
-- `TASKS.md` and `PROGRESS.md` are the only long-lived state sources.
-- Failures are explicit and machine-readable.
+- No task is complete without all required checks passing.
+- `TASKS.md` and `PROGRESS.md` remain the durable memory.
+- Production deployment health must be mechanically verifiable.
 
-Non-goals (Phase 1)
-- Parallel task execution.
-- AI self-determined success checks.
-- Fully dynamic task generation by agents.
-
-Phase 2 targets
-- Dependency DAG support beyond simple priority.
-- Deployment-first branch of task types (local deploy, remote smoke-check).
+Near-term non-goals
+- Parallel task execution
+- AI self-declared success without checks
+- Multi-environment preview/staging parity
+- Database-backed product features

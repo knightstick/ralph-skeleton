@@ -1,0 +1,13 @@
+{
+  "name": "@ralph/web",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "next build"
+  }
+}

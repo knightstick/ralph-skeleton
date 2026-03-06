@@ -1,7 +1,6 @@
 node_modules/
 dist/
-build/
-coverage/
+apps/api/dist/
+apps/web/.next/
+apps/web/.vercel/
 *.tsbuildinfo
-.DS_Store
-*.log

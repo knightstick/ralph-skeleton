@@ -26,6 +26,13 @@ Selection rule
 - The harness computes executable candidates as tasks whose `status` is `pending`, `blocked`, or `failed` and whose `dependencies` are all `done`.
 - A fresh selector agent chooses one candidate to run based on current repo state.
 
+Supported acceptance check types
+- `command`
+- `file_exists`
+- `http_status`
+- `http_json`
+- `http_contains`
+
 Format
 ```yaml
 - id: T-000
@@ -222,6 +229,54 @@ Tasks
       required: true
       timeout_seconds: 20
 
+- id: T-010
+  title: Add deployable Railway backend and Vercel frontend workspaces
+  status: done
+  priority: 90
+  dependencies: [T-009]
+  owner: agent
+  objective: |
+    Convert the repo into a deployable monorepo by adding a real HTTP backend for Railway and a Next.js frontend for Vercel while keeping the Ralph harness at the root.
+  acceptance:
+    - type: file_exists
+      path: apps/api/src/index.ts
+      required: true
+    - type: file_exists
+      path: apps/web/app/page.tsx
+      required: true
+    - type: command
+      command: npm run api:build
+      required: true
+      timeout_seconds: 120
+    - type: command
+      command: npm run web:build
+      required: true
+      timeout_seconds: 180
+  notes: Adds workspaces without removing the legacy root app smoke contract.
+
+- id: T-011
+  title: Add deployment automation and HTTP verifier support
+  status: done
+  priority: 100
+  dependencies: [T-010]
+  owner: agent
+  objective: |
+    Add CI/deploy-smoke workflows, provider config, and first-class HTTP acceptance checks so production deployments can be validated mechanically.
+  acceptance:
+    - type: file_exists
+      path: .github/workflows/ci.yml
+      required: true
+    - type: file_exists
+      path: .github/workflows/deploy-smoke.yml
+      required: true
+    - type: file_exists
+      path: railway.json
+      required: true
+    - type: command
+      command: npm run typecheck
+      required: true
+      timeout_seconds: 60
+  notes: Runtime HTTP checks were verified locally in an elevated sandbox because the default sandbox blocks loopback networking.
 
 
 

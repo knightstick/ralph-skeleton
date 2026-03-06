@@ -5,22 +5,23 @@ Purpose
 - Keep this concise and deterministic so a fresh context can recover immediately.
 
 Loop startup sequence
-1. Read `ARCHITECTURE.md` (how harness pieces fit together).
-2. Read `RUNBOOK.md` (operating rules and recovery).
-3. Read `TASKS.md` and identify the executable candidate set:
+1. Read `ARCHITECTURE.md`.
+2. Read `RUNBOOK.md`.
+3. Read `TASKS.md` and compute the executable candidate set:
    - `status in {pending, blocked, failed}`
    - all `dependencies` are `done`
-4. Read `PROGRESS.md` for last failure context.
-5. Let a fresh Codex selector choose exactly one task from the candidate set using current repo state.
+4. Read `PROGRESS.md` for the latest failure or deploy context.
+5. Let a fresh Codex selector choose exactly one task.
 6. Execute the chosen task, verify it, record the outcome, and commit that iteration.
-7. Repeat with a fresh selector until `Ready: none` or a failed iteration stops the run.
-8. Run the full outer loop via `npm run loop:run`.
-9. Use `npm run once` only when you explicitly want a single iteration.
+7. Repeat until `Ready: none` or a failed iteration stops the run.
 
 Initial bootstrap
 1. Install dependencies: `npm install`
 2. Verify queue: `npm run loop:status`
-3. Execute the full loop: `npm run loop:run`
+3. Verify builds:
+   - `npm run api:build`
+   - `npm run web:build`
+4. Execute the loop: `npm run loop:run`
 
 Hardcoded agent settings
 - agent: `codex exec`
@@ -29,63 +30,62 @@ Hardcoded agent settings
 
 Task execution rules
 - Start only from a clean git worktree.
-- Keep scope atomic. If output becomes large or multi-step, split before tasking.
+- Keep scope atomic.
 - Do not edit unrelated files.
-- Do not mark task complete until all declared checks pass.
-- Stream Codex stdout/stderr so execution progress is visible to the operator.
-- Commit each completed loop iteration so repo state is checkpointed immediately.
-- On failure:
-  - log check name, exit code, and first failure detail
-  - set task status to `failed` in `TASKS.md`
-  - decide one fallback action in progress notes:
-    - retry once
-    - split into subtask ids
-    - escalate for human review
+- Do not mark a task complete until all required acceptance checks pass.
+- Stream Codex stdout/stderr so execution progress is visible.
+- Commit each completed loop iteration immediately.
 
 Fresh context checklist
 - Agent should only receive:
-  - selected task entry from `TASKS.md`
+  - the selected task entry from `TASKS.md`
   - relevant acceptance checks from that task
   - this `RUNBOOK.md`
-- Avoid scanning unrelated project files unless explicitly needed by the task.
-- The harness is responsible for invoking Codex; the human operator should not build a separate agent command for normal runs.
+- Avoid scanning unrelated project files unless required by the task.
 
 State update rules
-- `TASKS.md` is mutable for `status` updates only.
+- `TASKS.md` is mutable for `status` updates and queue expansion.
 - `PROGRESS.md` is append-only.
-- A successful run must produce exactly one new progress entry.
+- Successful direct user-requested work should still be recorded in `PROGRESS.md`.
 
 Failure categories
 - `validation`
-  - malformed tasks or missing required fields
 - `unsupported_check`
-  - unsupported check type in TASKS.md
 - `execution`
-  - check command failed or timed out
 - `environment`
-  - missing binaries/dependencies
 - `agent`
-  - agent command failed
 - `human_decision`
-  - ambiguous scope or unsafe assumptions
+
+Supported acceptance checks
+- `command`
+- `file_exists`
+- `http_status`
+- `http_json`
+- `http_contains`
 
 Default failure policy
-- If `execution` fails: retry once in operator's next cycle if command-level and safe, otherwise mark `blocked`.
+- If `execution` fails: retry once if safe, otherwise mark `blocked`.
 - If `validation` fails: stop and fix task format first.
-- If `environment` fails: note remediation commands and mark task `blocked`.
-- If `human_decision` is required: pause with clear notes and request review.
-
-Follow-up format
-- Every progress entry must include:
-  - ready task ids after the run
-  - fallback if blocked
-  - expected owner for follow-up
+- If `environment` fails: note remediation commands and mark `blocked`.
+- If `human_decision` is required: pause and request review.
 
 Command examples
 - Check queue: `npm run loop:status`
 - Run the full loop: `npm run loop:run`
 - Run one iteration only: `npm run once`
-- App typecheck: `npm run app:typecheck`
-- App build: `npm run app:build`
-- App health smoke: `npm run app:health`
-- App startup check: `npm run app:start`
+- Legacy app typecheck: `npm run app:typecheck`
+- Legacy app build: `npm run app:build`
+- API typecheck: `npm run api:typecheck`
+- API build: `npm run api:build`
+- API start: `PORT=4010 npm run api:start`
+- Web typecheck: `npm run web:typecheck`
+- Web build: `npm run web:build`
+- Web start: `API_BASE_URL=http://127.0.0.1:4010 PORT=4011 npm run web:start`
+- Deploy smoke: `npm run smoke:deploy`
+
+Production handoff
+1. Confirm Railway uses `railway.json`.
+2. Confirm Railway healthcheck is `/health`.
+3. Confirm Vercel root directory is `apps/web`.
+4. Confirm `API_BASE_URL` is set in Vercel.
+5. Confirm GitHub secrets `BACKEND_PROD_URL` and `FRONTEND_PROD_URL` exist.
