@@ -2,6 +2,7 @@
 
 ## Requirements
 - Node.js (npm)
+- Codex CLI (`codex`) authenticated locally
 
 ## Quickstart
 1. Install dependencies:
@@ -13,11 +14,16 @@
 4. Check progress file updates:
    - `cat PROGRESS.md`
 
+Each iteration now runs Codex automatically with hardcoded settings:
+- agent: `codex exec`
+- model: `gpt-5.4`
+- reasoning effort: `high`
+
 ## Core scripts
 - `npm run loop:status`  
   Show queue and next task summary.
 - `npm run loop:run`  
-  Run one Ralph iteration (task selection + checks + state update).
+  Run the next Ralph iteration (task selection + Codex execution + checks + state update).
 - `npm run once`  
   Alias for one iteration.
 - `npm run typecheck`  

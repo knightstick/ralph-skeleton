@@ -12,7 +12,7 @@ Loop startup sequence
    - all `dependencies` are `done`
    - lowest `priority` first.
 4. Read `PROGRESS.md` for last failure context.
-5. Execute only that task.
+5. Execute one loop iteration so the harness runs Codex against that task.
 6. Record outcome in `PROGRESS.md`.
 7. Run via `npm run once` (alias for one TypeScript iteration).
 
@@ -20,6 +20,11 @@ Initial bootstrap
 1. Install dependencies: `npm install`
 2. Verify queue: `npm run loop:status`
 3. Execute one iteration: `npm run once`
+
+Hardcoded agent settings
+- agent: `codex exec`
+- model: `gpt-5.4`
+- reasoning effort: `high`
 
 Task execution rules
 - Keep scope atomic. If output becomes large or multi-step, split before tasking.
@@ -39,6 +44,7 @@ Fresh context checklist
   - relevant acceptance checks from that task
   - this `RUNBOOK.md`
 - Avoid scanning unrelated project files unless explicitly needed by the task.
+- The harness is responsible for invoking Codex; the human operator should not build a separate agent command for normal runs.
 
 State update rules
 - `TASKS.md` is mutable for `status` updates only.
@@ -75,4 +81,3 @@ Command examples
 - Check queue: `npm run loop:status`
 - Run one task: `npm run loop:run`
 - Run one iteration (preferred alias): `npm run once`
-- Run explicit task: `npm run loop:run -- --task-id T-002`

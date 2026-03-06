@@ -203,3 +203,29 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+
+- timestamp_utc: 2026-03-06T09:53:55Z
+  task_id: unknown
+  agent_prompt: Simplify harness to fixed Codex execution with hardcoded model and minimal operator surface.
+  result: success
+  failure_category: none
+  checks:
+    - name: typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run typecheck
+      required: true
+    - name: loop_status
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run loop:status
+      required: true
+  stdout_excerpt: |
+    Hardcoded Codex execution is active with gpt-5.4 and high reasoning effort.
+    Harness CLI reduced to status/run only.
+    Queue remains ready at T-005.
+  next: T-005
+  notes: |
+    Removed manual agent/task override paths, aligned docs with fixed Codex execution, and kept queue state unchanged.

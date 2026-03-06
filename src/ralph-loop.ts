@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CheckResult, FailureCategory, Status, Task, parseTasks, runCheck } from "./ralph-loop-core";
@@ -22,17 +22,18 @@ interface RunSummary {
   failureCategory: FailureCategory;
 }
 
-interface TaskSelection {
-  task: Task;
-  mode: "pending" | "retry";
-}
-
-const AUTO_RETRYABLE_CATEGORIES: FailureCategory[] = ["execution"];
+type SelectionMode = "pending" | "retry";
 const AUTO_RETRY_MESSAGE = "Execution failed; automatically retried once.";
 
 const REPO_ROOT = resolve(process.cwd());
 const TASKS_PATH = `${REPO_ROOT}/TASKS.md`;
 const PROGRESS_PATH = `${REPO_ROOT}/PROGRESS.md`;
+const AGENT_EXECUTABLE = "codex";
+const AGENT_MODEL = "gpt-5.4";
+const AGENT_REASONING_EFFORT = "high";
+const AGENT_SANDBOX_MODE = "workspace-write";
+const AGENT_APPROVAL_POLICY = "never";
+const AGENT_TIMEOUT_SECONDS = 1800;
 const AGENT_BOOTSTRAP_PROMPT = `You are the Ralph coding agent.
 Use repository memory files as the source of truth:
 - TASKS.md for queue state and acceptance checks
@@ -53,65 +54,45 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function nextTask(tasks: Task[]): Task | null {
-  const statusById = new Map<string, string>();
+function buildStatusIndex(tasks: Task[]): Map<string, Status> {
+  const statusById = new Map<string, Status>();
   for (const task of tasks) statusById.set(task.id, task.status);
-
-  const ready: Task[] = [];
-  for (const task of tasks) {
-    if (task.status !== "pending") continue;
-    const blocked = task.dependencies.some((dependency) => statusById.get(dependency) !== "done");
-    if (!blocked) ready.push(task);
-  }
-  if (!ready.length) return null;
-  ready.sort((a, b) => a.priority - b.priority);
-  return ready[0] ?? null;
+  return statusById;
 }
 
-function nextRetryableTask(tasks: Task[]): Task | null {
-  const statusById = new Map<string, string>();
-  for (const task of tasks) statusById.set(task.id, task.status);
-
-  const retryable: Task[] = [];
-  for (const task of tasks) {
-    if (task.status !== "blocked" && task.status !== "failed") continue;
-    if (task.dependencies.every((dep) => statusById.get(dep) === "done")) retryable.push(task);
-  }
-  if (!retryable.length) return null;
-  retryable.sort((a, b) => a.priority - b.priority);
-  return retryable[0] ?? null;
+function byPriority(a: Task, b: Task): number {
+  return a.priority - b.priority;
 }
 
-function selectTask(tasks: Task[]): TaskSelection | null {
-  const pendingTask = nextTask(tasks);
-  if (pendingTask) {
-    return {
-      task: pendingTask,
-      mode: "pending",
-    };
+function isReady(task: Task, statusById: Map<string, Status>): boolean {
+  return task.dependencies.every((dependency) => statusById.get(dependency) === "done");
+}
+
+function selectTask(tasks: Task[]): { task: Task; mode: SelectionMode } | null {
+  const statusById = buildStatusIndex(tasks);
+  const orderedTasks = [...tasks].sort(byPriority);
+
+  for (const task of orderedTasks) {
+    if (task.status === "pending" && isReady(task, statusById)) {
+      return { task, mode: "pending" };
+    }
   }
 
-  const retryableTask = nextRetryableTask(tasks);
-  if (!retryableTask) return null;
-  return {
-    task: retryableTask,
-    mode: "retry",
-  };
+  for (const task of orderedTasks) {
+    if ((task.status === "blocked" || task.status === "failed") && isReady(task, statusById)) {
+      return { task, mode: "retry" };
+    }
+  }
+  return null;
 }
 
 function computeNextAfter(tasks: Task[], doneId: string): string | null {
-  const statusById = new Map<string, string>();
-  for (const task of tasks) statusById.set(task.id, task.status);
-
-  const ready: Task[] = [];
-  for (const task of tasks) {
+  const statusById = buildStatusIndex(tasks);
+  for (const task of [...tasks].sort(byPriority)) {
     if (task.id === doneId) continue;
-    if (task.status !== "pending") continue;
-    if (task.dependencies.every((dep) => statusById.get(dep) === "done")) ready.push(task);
+    if (task.status === "pending" && isReady(task, statusById)) return task.id;
   }
-  if (!ready.length) return null;
-  ready.sort((a, b) => a.priority - b.priority);
-  return ready[0].id;
+  return null;
 }
 
 function updateTaskStatus(taskId: string, status: Status, lines: string[]): void {
@@ -188,26 +169,94 @@ function deriveFailureCategoryFromChecks(checks: CheckResult[]): FailureCategory
   return "none";
 }
 
-function runTask(task: Task, args: CLIArgs): RunSummary {
-  const checks: CheckResult[] = [];
-  if (args.agentCmd) {
-    const agentResult = runCommand(args.agentCmd, Number.parseInt(args.timeout ?? "120", 10));
-    checks.push({
+function buildAgentCommand(): string {
+  return [
+    AGENT_EXECUTABLE,
+    "-m",
+    AGENT_MODEL,
+    "-c",
+    `model_reasoning_effort="${AGENT_REASONING_EFFORT}"`,
+    "-s",
+    AGENT_SANDBOX_MODE,
+    "-a",
+    AGENT_APPROVAL_POLICY,
+    "exec",
+  ].join(" ");
+}
+
+function runAgent(task: Task, timeoutSeconds: number): CheckResult {
+  const args = [
+    "-m",
+    AGENT_MODEL,
+    "-c",
+    `model_reasoning_effort="${AGENT_REASONING_EFFORT}"`,
+    "-s",
+    AGENT_SANDBOX_MODE,
+    "-a",
+    AGENT_APPROVAL_POLICY,
+    "-C",
+    REPO_ROOT,
+    "exec",
+    starterPrompt(task),
+  ];
+
+  const result = spawnSync(AGENT_EXECUTABLE, args, {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    timeout: timeoutSeconds * 1000,
+  });
+
+  const output = [result.stdout ?? "", result.stderr ?? "", result.error?.message ?? ""]
+    .filter(Boolean)
+    .join("\n");
+
+  if (result.error) {
+    const failureCategory: FailureCategory =
+      (result.error as NodeJS.ErrnoException).code === "ENOENT" ? "environment" : "agent";
+    return {
       name: "agent_command",
-      status: agentResult.status,
-      exit_code: agentResult.exit_code,
+      status: "fail",
+      exit_code: typeof result.status === "number" ? result.status : 1,
       required: true,
-      failure_category: agentResult.failure_category === "environment" ? "environment" : "agent",
-      command: args.agentCmd,
-      output: agentResult.output,
-    });
-    if (agentResult.status === "fail") {
-      return {
-        result: "fail",
-        checks,
-        failureCategory: checks.some((check) => check.failure_category === "environment") ? "environment" : "agent",
-      };
-    }
+      failure_category: failureCategory,
+      command: buildAgentCommand(),
+      output,
+    };
+  }
+
+  if (result.status === 0) {
+    return {
+      name: "agent_command",
+      status: "pass",
+      exit_code: 0,
+      required: true,
+      failure_category: "none",
+      command: buildAgentCommand(),
+      output,
+    };
+  }
+
+  return {
+    name: "agent_command",
+    status: "fail",
+    exit_code: result.status ?? 1,
+    required: true,
+    failure_category: "agent",
+    command: buildAgentCommand(),
+    output,
+  };
+}
+
+function runTask(task: Task): RunSummary {
+  const checks: CheckResult[] = [];
+  const agentResult = runAgent(task, AGENT_TIMEOUT_SECONDS);
+  checks.push(agentResult);
+  if (agentResult.status === "fail") {
+    return {
+      result: "fail",
+      checks,
+      failureCategory: agentResult.failure_category,
+    };
   }
 
   for (const check of task.acceptance) {
@@ -263,11 +312,6 @@ function appendProgress(entry: ProgressEntry): void {
   }
 }
 
-function canAutoRetry(summary: RunSummary, args: CLIArgs): boolean {
-  if (args.agentCmd) return false;
-  return AUTO_RETRYABLE_CATEGORIES.includes(summary.failureCategory);
-}
-
 function summarizeTask(task: Task): string {
   return `${task.id}: ${task.objective.replace(/\n/g, " ")}`;
 }
@@ -316,35 +360,9 @@ function statusReport(tasks: Task[]): string {
   ].join("\n");
 }
 
-interface CLIArgs {
-  command: "run" | "status";
-  taskId?: string;
-  agentCmd?: string;
-  timeout?: string;
-}
-
-function parseArgs(argv: string[]): CLIArgs | null {
-  if (argv.length === 0 || (argv[0] !== "run" && argv[0] !== "status")) return null;
-  const command = argv[0] as "run" | "status";
-  if (command === "status") return { command };
-
-  const args: CLIArgs = { command, timeout: "120" };
-  let i = 1;
-  while (i < argv.length) {
-    const arg = argv[i];
-    if (arg === "--task-id") {
-      args.taskId = argv[i + 1];
-      i += 1;
-    } else if (arg === "--agent-cmd") {
-      args.agentCmd = argv[i + 1];
-      i += 1;
-    } else if (arg === "--timeout") {
-      args.timeout = argv[i + 1] ?? "120";
-      i += 1;
-    }
-    i += 1;
-  }
-  return args;
+function parseCommand(argv: string[]): "run" | "status" | null {
+  if (argv.length !== 1) return null;
+  return argv[0] === "run" || argv[0] === "status" ? argv[0] : null;
 }
 
 function printUsage(): never {
@@ -352,16 +370,14 @@ function printUsage(): never {
 Usage:
   npm run loop:status
   npm run loop:run
-  npm run loop:run -- --task-id T-002
-  npm run loop:run -- --agent-cmd "echo done"
 `.trim();
   console.log(help);
   process.exit(2);
 }
 
 function main(): number {
-  const parsed = parseArgs(process.argv.slice(2));
-  if (!parsed) return printUsage();
+  const command = parseCommand(process.argv.slice(2));
+  if (!command) return printUsage();
 
   let tasks: Task[] = [];
   let rawLines: string[] = [];
@@ -384,33 +400,18 @@ function main(): number {
     return 1;
   }
 
-  if (parsed.command === "status") {
+  if (command === "status") {
     console.log(statusReport(tasks));
     return 0;
   }
 
-  let task: Task | null;
-  let selectionMode: TaskSelection["mode"] = "pending";
-  if (parsed.taskId) {
-    task = tasks.find((item) => item.id === parsed.taskId) ?? null;
-    if (!task) {
-      console.log(`Task not found: ${parsed.taskId}`);
-      return 2;
-    }
-    if (!["pending", "blocked", "failed"].includes(task.status)) {
-      console.log(`Task ${parsed.taskId} is not runnable (status=${task.status})`);
-      return 2;
-    }
-    selectionMode = task.status === "pending" ? "pending" : "retry";
-  } else {
-    const selected = selectTask(tasks);
-    if (!selected) {
-      console.log("No executable pending task");
-      return 0;
-    }
-    task = selected.task;
-    selectionMode = selected.mode;
+  const selected = selectTask(tasks);
+  if (!selected) {
+    console.log("No executable pending task");
+    return 0;
   }
+  const task = selected.task;
+  const selectionMode = selected.mode;
 
   const beforeRun = [...rawLines];
   updateTaskStatus(task.id, "in_progress", beforeRun);
@@ -419,16 +420,16 @@ function main(): number {
   console.log(`${attemptLabel}: ${summarizeTask(task)}`);
   console.log("\nStarter prompt:\n" + starterPrompt(task) + "\n");
 
-  let summary = runTask(task, parsed);
+  let summary = runTask(task);
   let attempts = 1;
   let notes = "Completed via ralph-loop.ts";
 
-  const retriesAllowed = canAutoRetry(summary, parsed);
+  const retriesAllowed = summary.failureCategory === "execution";
   if (summary.result === "fail" && retriesAllowed) {
     attempts += 1;
     console.log("Retrying execution once...");
     notes = `${AUTO_RETRY_MESSAGE}`;
-    summary = runTask(task, parsed);
+    summary = runTask(task);
   }
 
   const finalFailureCategory = summary.result === "pass" ? "none" : summary.failureCategory;
