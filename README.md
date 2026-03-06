@@ -18,6 +18,9 @@ Each iteration now runs Codex automatically with hardcoded settings:
 - agent: `codex exec`
 - model: `gpt-5.4`
 - reasoning effort: `high`
+- live Codex stdout/stderr is streamed during execution
+- the git worktree must be clean before `loop:run`
+- every loop iteration auto-commits its resulting changes
 
 ## Core scripts
 - `npm run loop:status`  
@@ -32,3 +35,4 @@ Each iteration now runs Codex automatically with hardcoded settings:
 ## Troubleshooting
 - Validation or parse issues are recorded in `PROGRESS.md` under `failure_category: validation`.
 - Execution issues are recorded as `failure_category: execution` or `environment`.
+- If `loop:run` refuses to start, clean or commit existing local changes first.

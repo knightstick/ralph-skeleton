@@ -16,6 +16,7 @@ Use this file as the short, practical checklist.
 - `git pull` (only if you want remote updates)
 - `npm run typecheck`
 - `npm run loop:status`
+- `git status --short`
 
 If this is your first run in a fresh session, stop after status and continue from step 2.
 
@@ -27,20 +28,25 @@ Quick interpretation:
 
 2) Understand what `npm run once` now does
 - `npm run once` only:
+  - refuses to start if the git worktree is already dirty
   - computes the current ready task set
   - asks a fresh Codex session to choose one task from that set
   - runs Codex on that task using the hardcoded settings above
+  - streams live Codex stdout/stderr while the task is running
   - runs that task's acceptance checks
   - updates `TASKS.md` and `PROGRESS.md`
+  - creates a git commit for that iteration before exiting
 - If Codex cannot complete the task, the run will fail and the failure will be recorded in `PROGRESS.md`.
 
 3) The no-thinking loop
 - Run `npm run loop:status`
+- Run `git status --short` and confirm it is empty
 - Read the `Ready:` line
 - Run `npm run once`
 - If it passes:
   - the harness marks the task done
   - the ready set updates in `npm run loop:status`
+  - the loop leaves behind a commit for that task iteration
 - If it fails:
   - open the newest entry in `PROGRESS.md`
   - inspect the failing task in `TASKS.md`
@@ -60,6 +66,7 @@ Run these only after the matching app tasks exist:
 - `npm run app:start`
 
 6) Recovery
+- If `npm run once` refuses to start because the worktree is dirty, commit or clean those changes first.
 - If the last command line is `Usage: ...`, it usually means a check imported the CLI entrypoint instead of a library module.
 - If you see `Validation error` from `loop:status`, inspect the task block in `TASKS.md` around the cited line.
   - Common YAML breakpoints: `command`/`notes` containing `:` or quotes, bad indentation, mixed block styles.
@@ -68,6 +75,7 @@ Run these only after the matching app tasks exist:
 
 7) Commands you will actually use most
 - Check state: `npm run loop:status`
+- Check cleanliness before a run: `git status --short`
 - Verify harness code: `npm run typecheck`
 - Run one full Codex + verify iteration: `npm run once`
 

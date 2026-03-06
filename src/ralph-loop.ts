@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync, spawnSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CheckResult, FailureCategory, Status, Task, parseTasks, runCheck } from "./ralph-loop-core";
@@ -53,6 +53,10 @@ function nowUtc(): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function buildStatusIndex(tasks: Task[]): Map<string, Status> {
@@ -168,6 +172,42 @@ function deriveFailureCategoryFromChecks(checks: CheckResult[]): FailureCategory
   return "none";
 }
 
+function ensureCleanWorktree(): CheckResult {
+  const statusCheck = runCommand("git status --short");
+  return {
+    ...statusCheck,
+    name: "git_status_clean",
+    status: statusCheck.status === "pass" && !statusCheck.output.trim() ? "pass" : "fail",
+    failure_category: statusCheck.status === "pass" && !statusCheck.output.trim() ? "none" : statusCheck.failure_category,
+    output: statusCheck.status === "pass" && !statusCheck.output.trim()
+      ? "Working tree clean."
+      : statusCheck.output || "Working tree is not clean.",
+  };
+}
+
+function buildCommitMessage(task: Task, result: RunSummary["result"]): string {
+  return `ralph: ${task.id} ${result} - ${task.title}`;
+}
+
+function commitIteration(task: Task, result: RunSummary["result"]): CheckResult {
+  const addCheck = runCommand("git add -A");
+  if (addCheck.status !== "pass") {
+    return {
+      ...addCheck,
+      name: "git_commit",
+      output: `git add failed.\n${addCheck.output}`.trim(),
+    };
+  }
+
+  const commitMessage = buildCommitMessage(task, result);
+  const commitCheck = runCommand(`git commit -m ${shellQuote(commitMessage)}`);
+  return {
+    ...commitCheck,
+    name: "git_commit",
+    output: [commitMessage, commitCheck.output].filter(Boolean).join("\n"),
+  };
+}
+
 function selectorPrompt(candidates: Task[]): string {
   const taskList = candidates
     .map((task) => {
@@ -216,59 +256,123 @@ function buildAgentCommand(): string {
   return [AGENT_EXECUTABLE, ...buildCodexArgs("__PROMPT__").slice(0, -1)].join(" ");
 }
 
-function runCodexPrompt(prompt: string, timeoutSeconds: number, name: string): CheckResult {
-  const result = spawnSync(AGENT_EXECUTABLE, buildCodexArgs(prompt), {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-    timeout: timeoutSeconds * 1000,
+async function runCodexPrompt(
+  prompt: string,
+  timeoutSeconds: number,
+  name: string,
+  streamOutput = false,
+): Promise<CheckResult> {
+  return new Promise((resolveCheck) => {
+    const child = spawn(AGENT_EXECUTABLE, buildCodexArgs(prompt), {
+      cwd: REPO_ROOT,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let errorMessage = "";
+    let timedOut = false;
+    let settled = false;
+    let forceKillTimer: NodeJS.Timeout | undefined;
+
+    const finish = (check: CheckResult): void => {
+      if (settled) return;
+      settled = true;
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      clearTimeout(timeoutHandle);
+      resolveCheck(check);
+    };
+
+    const collect = (chunk: string | Buffer, target: "stdout" | "stderr"): void => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      if (target === "stdout") {
+        stdout += text;
+        if (streamOutput) process.stdout.write(text);
+        return;
+      }
+      stderr += text;
+      if (streamOutput) process.stderr.write(text);
+    };
+
+    child.stdout?.on("data", (chunk) => collect(chunk, "stdout"));
+    child.stderr?.on("data", (chunk) => collect(chunk, "stderr"));
+
+    child.on("error", (error) => {
+      errorMessage = error.message;
+      const failureCategory: FailureCategory = (error as NodeJS.ErrnoException).code === "ENOENT" ? "environment" : "agent";
+      finish({
+        name,
+        status: "fail",
+        exit_code: 1,
+        required: true,
+        failure_category: failureCategory,
+        command: buildAgentCommand(),
+        output: [stdout, stderr, errorMessage].filter(Boolean).join("\n"),
+      });
+    });
+
+    child.on("close", (code) => {
+      const output = [
+        stdout,
+        stderr,
+        errorMessage,
+        timedOut ? `Timed out after ${timeoutSeconds} seconds.` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      if (timedOut) {
+        finish({
+          name,
+          status: "fail",
+          exit_code: typeof code === "number" ? code : 1,
+          required: true,
+          failure_category: "agent",
+          command: buildAgentCommand(),
+          output,
+        });
+        return;
+      }
+
+      if (code === 0) {
+        finish({
+          name,
+          status: "pass",
+          exit_code: 0,
+          required: true,
+          failure_category: "none",
+          command: buildAgentCommand(),
+          output,
+        });
+        return;
+      }
+
+      finish({
+        name,
+        status: "fail",
+        exit_code: typeof code === "number" ? code : 1,
+        required: true,
+        failure_category: "agent",
+        command: buildAgentCommand(),
+        output,
+      });
+    });
+
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        if (!settled) child.kill("SIGKILL");
+      }, 2_000);
+    }, timeoutSeconds * 1000);
   });
-
-  const output = [result.stdout ?? "", result.stderr ?? "", result.error?.message ?? ""]
-    .filter(Boolean)
-    .join("\n");
-
-  if (result.error) {
-    const failureCategory: FailureCategory =
-      (result.error as NodeJS.ErrnoException).code === "ENOENT" ? "environment" : "agent";
-    return {
-      name,
-      status: "fail",
-      exit_code: typeof result.status === "number" ? result.status : 1,
-      required: true,
-      failure_category: failureCategory,
-      command: buildAgentCommand(),
-      output,
-    };
-  }
-
-  if (result.status === 0) {
-    return {
-      name,
-      status: "pass",
-      exit_code: 0,
-      required: true,
-      failure_category: "none",
-      command: buildAgentCommand(),
-      output,
-    };
-  }
-
-  return {
-    name,
-    status: "fail",
-    exit_code: result.status ?? 1,
-    required: true,
-    failure_category: "agent",
-    command: buildAgentCommand(),
-    output,
-  };
 }
 
-function chooseTaskWithAgent(tasks: Task[]): { task: Task; mode: SelectionMode; check: CheckResult } | null {
+async function chooseTaskWithAgent(tasks: Task[]): Promise<{ task: Task; mode: SelectionMode; check: CheckResult } | null> {
   const candidates = executableTasks(tasks);
   if (candidates.length === 0) return null;
 
-  const selectionCheck = runCodexPrompt(selectorPrompt(candidates), AGENT_SELECTION_TIMEOUT_SECONDS, "agent_selector");
+  const selectionCheck = await runCodexPrompt(selectorPrompt(candidates), AGENT_SELECTION_TIMEOUT_SECONDS, "agent_selector");
   if (selectionCheck.status === "fail") {
     return {
       task: candidates[0]!,
@@ -300,13 +404,13 @@ function chooseTaskWithAgent(tasks: Task[]): { task: Task; mode: SelectionMode; 
   };
 }
 
-function runAgent(task: Task, timeoutSeconds: number): CheckResult {
-  return runCodexPrompt(starterPrompt(task), timeoutSeconds, "agent_command");
+async function runAgent(task: Task, timeoutSeconds: number): Promise<CheckResult> {
+  return runCodexPrompt(starterPrompt(task), timeoutSeconds, "agent_command", true);
 }
 
-function runTask(task: Task): RunSummary {
+async function runTask(task: Task): Promise<RunSummary> {
   const checks: CheckResult[] = [];
-  const agentResult = runAgent(task, AGENT_TIMEOUT_SECONDS);
+  const agentResult = await runAgent(task, AGENT_TIMEOUT_SECONDS);
   checks.push(agentResult);
   if (agentResult.status === "fail") {
     return {
@@ -428,7 +532,7 @@ Usage:
   process.exit(2);
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const command = parseCommand(process.argv.slice(2));
   if (!command) return printUsage();
 
@@ -458,7 +562,26 @@ function main(): number {
     return 0;
   }
 
-  const selected = chooseTaskWithAgent(tasks);
+  const cleanWorktreeCheck = ensureCleanWorktree();
+  if (cleanWorktreeCheck.status === "fail") {
+    appendProgress({
+      timestamp_utc: nowUtc(),
+      task_id: "unknown",
+      agent_prompt: "Require clean git worktree before loop run",
+      result: "fail",
+      failure_category: cleanWorktreeCheck.failure_category,
+      checks: [cleanWorktreeCheck],
+      stdout_excerpt: cleanWorktreeCheck.output.slice(0, 1200),
+      ready_after: executableTasks(tasks).map((item) => item.id),
+      notes: "Refused to run because git working tree was already dirty.",
+    });
+    console.log("Refusing to run: git working tree is dirty.");
+    console.log(cleanWorktreeCheck.output);
+    return 1;
+  }
+
+  console.log("Selecting next task with Codex...");
+  const selected = await chooseTaskWithAgent(tasks);
   if (!selected) {
     console.log("No executable task");
     return 0;
@@ -487,8 +610,9 @@ function main(): number {
   const attemptLabel = selectionMode === "retry" ? `Retrying: ${task.status} task` : "Running";
   console.log(`${attemptLabel}: ${summarizeTask(task)}`);
   console.log("\nStarter prompt:\n" + starterPrompt(task) + "\n");
+  console.log("Codex output:\n");
 
-  let summary = runTask(task);
+  let summary = await runTask(task);
   let attempts = 1;
   let notes = "Completed via ralph-loop.ts";
 
@@ -497,7 +621,7 @@ function main(): number {
     attempts += 1;
     console.log("Retrying execution once...");
     notes = `${AUTO_RETRY_MESSAGE}`;
-    summary = runTask(task);
+    summary = await runTask(task);
   }
 
   const finalFailureCategory = summary.result === "pass" ? "none" : summary.failureCategory;
@@ -522,9 +646,20 @@ function main(): number {
     notes,
   });
 
+  console.log("Committing loop changes...");
+  const commitCheck = commitIteration(task, summary.result);
+  if (commitCheck.status === "fail") {
+    console.log("Commit failed.");
+    console.log(commitCheck.output);
+    return 1;
+  }
+
   console.log(`Result: ${summary.result === "pass" ? "success" : "fail"}`);
+  console.log(`Commit: ${buildCommitMessage(task, summary.result)}`);
   console.log(`Ready after run: ${readyAfter.length > 0 ? readyAfter.join(", ") : "none"}`);
   return summary.result === "pass" ? 0 : 1;
 }
 
-process.exit(main());
+void main().then((code) => {
+  process.exit(code);
+});

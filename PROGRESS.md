@@ -256,3 +256,72 @@ Log
   ready_after: [T-005]
   notes: |
     Reworked the harness so it computes executable candidates, asks a fresh Codex session to choose one, and avoids carrying forward a previous iteration's next-task decision.
+
+- timestamp_utc: 2026-03-06T10:27:43Z
+  task_id: T-005
+  agent_prompt: "Task T-005 | Add runnable app scaffold | Create a minimal TypeScript app skeleton under src/app/ with a single entrypoint and a named health contract file."
+  result: success
+  failure_category: none
+  checks:
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: src/app/index.ts
+      required: true
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: src/app/health.ts
+      required: true
+    - name: smoke
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node --import tsx src/app/index.ts
+      required: false
+  stdout_excerpt: |
+    Created src/app/index.ts and src/app/health.ts.
+    Smoke run output: ralph-app:ok
+  ready_after: [T-006]
+  notes: |
+    Added the minimal app scaffold with a named health contract and a runnable entrypoint.
+    Follow-up owner: agent.
+
+- timestamp_utc: 2026-03-06T10:28:09Z
+  task_id: T-005
+  agent_prompt: Task T-005 | Add runnable app scaffold | Create a minimal TypeScript app skeleton under `src/app/` with a single entrypoint and a named health contract file.
+  result: success
+  failure_category: none
+  checks:
+    - name: agent_selector
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: agent_command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: src/app/index.ts
+      required: true
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: src/app/health.ts
+      required: true
+  stdout_excerpt: |
+    agent_command=pass file_exists=pass file_exists=pass
+  ready_after: [T-006]
+  notes: |
+    Completed via ralph-loop.ts
+

@@ -65,5 +65,4 @@ Non-goals (Phase 1)
 
 Phase 2 targets
 - Dependency DAG support beyond simple priority.
-- Optional auto-commit on success.
 - Deployment-first branch of task types (local deploy, remote smoke-check).

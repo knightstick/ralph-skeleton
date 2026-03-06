@@ -129,7 +129,7 @@ Tasks
 
 - id: T-005
   title: Add runnable app scaffold
-  status: pending
+  status: done
   priority: 40
   dependencies: [T-003, T-004]
   owner: agent
@@ -221,3 +221,4 @@ Tasks
       command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
       required: true
       timeout_seconds: 20
+

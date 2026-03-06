@@ -14,7 +14,8 @@ Loop startup sequence
 5. Let a fresh Codex selector choose exactly one task from the candidate set using current repo state.
 6. Execute one loop iteration so the harness runs Codex against that chosen task.
 7. Record outcome in `PROGRESS.md`.
-8. Run via `npm run once` (alias for one TypeScript iteration).
+8. Commit the iteration changes before exiting.
+9. Run via `npm run once` (alias for one TypeScript iteration).
 
 Initial bootstrap
 1. Install dependencies: `npm install`
@@ -27,9 +28,12 @@ Hardcoded agent settings
 - reasoning effort: `high`
 
 Task execution rules
+- Start only from a clean git worktree.
 - Keep scope atomic. If output becomes large or multi-step, split before tasking.
 - Do not edit unrelated files.
 - Do not mark task complete until all declared checks pass.
+- Stream Codex stdout/stderr so execution progress is visible to the operator.
+- Commit each completed loop iteration so repo state is checkpointed immediately.
 - On failure:
   - log check name, exit code, and first failure detail
   - set task status to `failed` in `TASKS.md`
