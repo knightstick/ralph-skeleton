@@ -15,15 +15,16 @@ Task schema (required fields)
 - `id` — stable unique task ID (`T-001`, `INFRA-01`).
 - `title` — short title.
 - `status` — one of the status values above.
-- `priority` — integer (lower is higher priority).
+- `priority` — advisory integer for the selector agent.
 - `dependencies` — list of other task ids that must be `done`.
 - `owner` — intended executor (`agent` by default).
 - `objective` — exact outcome to deliver.
 - `acceptance` — list of deterministic checks required for completion.
 - `notes` — optional context.
 
-Ordering rule
-- Select the next task as the lowest `priority` `pending` task whose `dependencies` are all `done`.
+Selection rule
+- The harness computes executable candidates as tasks whose `status` is `pending`, `blocked`, or `failed` and whose `dependencies` are all `done`.
+- A fresh selector agent chooses one candidate to run based on current repo state.
 
 Format
 ```yaml

@@ -12,7 +12,7 @@ interface ProgressEntry {
   failure_category: FailureCategory;
   checks: CheckResult[];
   stdout_excerpt: string;
-  next: string | null;
+  ready_after: string[];
   notes: string;
 }
 
@@ -24,6 +24,7 @@ interface RunSummary {
 
 type SelectionMode = "pending" | "retry";
 const AUTO_RETRY_MESSAGE = "Execution failed; automatically retried once.";
+const AGENT_SELECTION_TIMEOUT_SECONDS = 300;
 
 const REPO_ROOT = resolve(process.cwd());
 const TASKS_PATH = `${REPO_ROOT}/TASKS.md`;
@@ -68,30 +69,28 @@ function isReady(task: Task, statusById: Map<string, Status>): boolean {
   return task.dependencies.every((dependency) => statusById.get(dependency) === "done");
 }
 
-function selectTask(tasks: Task[]): { task: Task; mode: SelectionMode } | null {
+function executableTasks(tasks: Task[]): Task[] {
   const statusById = buildStatusIndex(tasks);
-  const orderedTasks = [...tasks].sort(byPriority);
-
-  for (const task of orderedTasks) {
-    if (task.status === "pending" && isReady(task, statusById)) {
-      return { task, mode: "pending" };
-    }
-  }
-
-  for (const task of orderedTasks) {
-    if ((task.status === "blocked" || task.status === "failed") && isReady(task, statusById)) {
-      return { task, mode: "retry" };
-    }
-  }
-  return null;
+  return [...tasks]
+    .filter((task) => ["pending", "blocked", "failed"].includes(task.status) && isReady(task, statusById))
+    .sort(byPriority);
 }
 
-function computeNextAfter(tasks: Task[], doneId: string): string | null {
-  const statusById = buildStatusIndex(tasks);
-  for (const task of [...tasks].sort(byPriority)) {
-    if (task.id === doneId) continue;
-    if (task.status === "pending" && isReady(task, statusById)) return task.id;
-  }
+function formatReadyList(tasks: Task[]): string {
+  if (tasks.length === 0) return "none";
+  return tasks.map((task) => `${task.id} (${task.status})`).join(", ");
+}
+
+function selectionModeFor(task: Task): SelectionMode {
+  return task.status === "pending" ? "pending" : "retry";
+}
+
+function extractSelectedTaskId(output: string, candidates: Task[]): string | null {
+  const candidateIds = new Set(candidates.map((task) => task.id));
+  const matches = output.match(/\b[A-Z]+-\d+\b/g) ?? [];
+  const selectedIds = [...new Set(matches.filter((id) => candidateIds.has(id)))];
+  if (selectedIds.length === 1) return selectedIds[0]!;
+  if (selectedIds.length === 0 && candidates.length === 1) return candidates[0]!.id;
   return null;
 }
 
@@ -169,23 +168,35 @@ function deriveFailureCategoryFromChecks(checks: CheckResult[]): FailureCategory
   return "none";
 }
 
-function buildAgentCommand(): string {
-  return [
-    AGENT_EXECUTABLE,
-    "-m",
-    AGENT_MODEL,
-    "-c",
-    `model_reasoning_effort="${AGENT_REASONING_EFFORT}"`,
-    "-s",
-    AGENT_SANDBOX_MODE,
-    "-a",
-    AGENT_APPROVAL_POLICY,
-    "exec",
-  ].join(" ");
+function selectorPrompt(candidates: Task[]): string {
+  const taskList = candidates
+    .map((task) => {
+      const objective = task.objective.replace(/\s+/g, " ").trim();
+      return `- ${task.id} | status=${task.status} | priority=${task.priority} | title=${task.title} | objective=${objective}`;
+    })
+    .join("\n");
+
+  return `You are the Ralph task selector.
+Read the repository memory files before choosing:
+- TASKS.md
+- PROGRESS.md
+- RUNBOOK.md
+- ARCHITECTURE.md
+
+Choose exactly one executable task to run next from this candidate set:
+${taskList}
+
+Rules:
+- Re-prioritize fresh from current repo state.
+- Do not rely on any previous iteration's next-task suggestion.
+- You may choose a retry task if that is the highest-leverage move now.
+- You must choose exactly one id from the candidate set above.
+
+Output only the task id.`;
 }
 
-function runAgent(task: Task, timeoutSeconds: number): CheckResult {
-  const args = [
+function buildCodexArgs(prompt: string): string[] {
+  return [
     "-m",
     AGENT_MODEL,
     "-c",
@@ -197,10 +208,16 @@ function runAgent(task: Task, timeoutSeconds: number): CheckResult {
     "-C",
     REPO_ROOT,
     "exec",
-    starterPrompt(task),
+    prompt,
   ];
+}
 
-  const result = spawnSync(AGENT_EXECUTABLE, args, {
+function buildAgentCommand(): string {
+  return [AGENT_EXECUTABLE, ...buildCodexArgs("__PROMPT__").slice(0, -1)].join(" ");
+}
+
+function runCodexPrompt(prompt: string, timeoutSeconds: number, name: string): CheckResult {
+  const result = spawnSync(AGENT_EXECUTABLE, buildCodexArgs(prompt), {
     cwd: REPO_ROOT,
     encoding: "utf8",
     timeout: timeoutSeconds * 1000,
@@ -214,7 +231,7 @@ function runAgent(task: Task, timeoutSeconds: number): CheckResult {
     const failureCategory: FailureCategory =
       (result.error as NodeJS.ErrnoException).code === "ENOENT" ? "environment" : "agent";
     return {
-      name: "agent_command",
+      name,
       status: "fail",
       exit_code: typeof result.status === "number" ? result.status : 1,
       required: true,
@@ -226,7 +243,7 @@ function runAgent(task: Task, timeoutSeconds: number): CheckResult {
 
   if (result.status === 0) {
     return {
-      name: "agent_command",
+      name,
       status: "pass",
       exit_code: 0,
       required: true,
@@ -237,7 +254,7 @@ function runAgent(task: Task, timeoutSeconds: number): CheckResult {
   }
 
   return {
-    name: "agent_command",
+    name,
     status: "fail",
     exit_code: result.status ?? 1,
     required: true,
@@ -245,6 +262,46 @@ function runAgent(task: Task, timeoutSeconds: number): CheckResult {
     command: buildAgentCommand(),
     output,
   };
+}
+
+function chooseTaskWithAgent(tasks: Task[]): { task: Task; mode: SelectionMode; check: CheckResult } | null {
+  const candidates = executableTasks(tasks);
+  if (candidates.length === 0) return null;
+
+  const selectionCheck = runCodexPrompt(selectorPrompt(candidates), AGENT_SELECTION_TIMEOUT_SECONDS, "agent_selector");
+  if (selectionCheck.status === "fail") {
+    return {
+      task: candidates[0]!,
+      mode: selectionModeFor(candidates[0]!),
+      check: selectionCheck,
+    };
+  }
+
+  const selectedId = extractSelectedTaskId(selectionCheck.output, candidates);
+  if (!selectedId) {
+    return {
+      task: candidates[0]!,
+      mode: selectionModeFor(candidates[0]!),
+      check: {
+        ...selectionCheck,
+        status: "fail",
+        exit_code: 1,
+        failure_category: "agent",
+        output: `Unable to extract a single executable task id from selector output.\n${selectionCheck.output}`,
+      },
+    };
+  }
+
+  const task = candidates.find((candidate) => candidate.id === selectedId)!;
+  return {
+    task,
+    mode: selectionModeFor(task),
+    check: selectionCheck,
+  };
+}
+
+function runAgent(task: Task, timeoutSeconds: number): CheckResult {
+  return runCodexPrompt(starterPrompt(task), timeoutSeconds, "agent_command");
 }
 
 function runTask(task: Task): RunSummary {
@@ -300,7 +357,7 @@ function appendProgress(entry: ProgressEntry): void {
   } else {
     lines.push('  stdout_excerpt: ""');
   }
-  lines.push(`  next: ${entry.next ?? "none"}`);
+  lines.push(`  ready_after: [${entry.ready_after.join(", ")}]`);
   lines.push("  notes: |");
   for (const ln of entry.notes.split("\n")) lines.push(`    ${ln}`);
 
@@ -344,19 +401,15 @@ function statusReport(tasks: Task[]): string {
     else counts.other += 1;
   }
 
-  const selection = selectTask(tasks);
-  const nextLabel = selection
-    ? selection.mode === "pending"
-      ? selection.task.id
-      : `${selection.task.id} (retry ${selection.task.status})`
-    : "none";
+  const ready = executableTasks(tasks);
   return [
     `Pending: ${counts.pending}`,
     `In Progress: ${counts.in_progress}`,
     `Done: ${counts.done}`,
     `Failed: ${counts.failed}`,
     `Blocked: ${counts.blocked}`,
-    `Next: ${nextLabel}`,
+    `Ready: ${formatReadyList(ready)}`,
+    "Next: chosen fresh by agent at run time",
   ].join("\n");
 }
 
@@ -393,7 +446,7 @@ function main(): number {
       failure_category: "validation",
       checks: [],
       stdout_excerpt: message.slice(0, 1200),
-      next: null,
+      ready_after: [],
       notes: "Failed while parsing TASKS.md",
     });
     console.log(`Validation error: ${message}`);
@@ -405,10 +458,25 @@ function main(): number {
     return 0;
   }
 
-  const selected = selectTask(tasks);
+  const selected = chooseTaskWithAgent(tasks);
   if (!selected) {
-    console.log("No executable pending task");
+    console.log("No executable task");
     return 0;
+  }
+  if (selected.check.status === "fail") {
+    appendProgress({
+      timestamp_utc: nowUtc(),
+      task_id: "unknown",
+      agent_prompt: "Select next executable task",
+      result: "fail",
+      failure_category: selected.check.failure_category,
+      checks: [selected.check],
+      stdout_excerpt: selected.check.output.slice(0, 1200),
+      ready_after: executableTasks(tasks).map((item) => item.id),
+      notes: "Fresh agent task selection failed before execution.",
+    });
+    console.log("Task selection failed.");
+    return 1;
   }
   const task = selected.task;
   const selectionMode = selected.mode;
@@ -441,21 +509,21 @@ function main(): number {
   const failed = summary.checks.filter((check) => check.status !== "pass");
   const excerpt = failed[0]?.output || summary.checks.map((check) => `${check.name}=${check.status}`).join(" ");
   const tasksAfter = tasks.map((item) => (item.id === task?.id ? { ...item, status: newStatus } : item));
-  const next = computeNextAfter(tasksAfter, task.id);
+  const readyAfter = executableTasks(tasksAfter).map((item) => item.id);
   appendProgress({
     timestamp_utc: nowUtc(),
     task_id: task.id,
     agent_prompt: compactPrompt(task),
     result: summary.result === "pass" ? "success" : "fail",
     failure_category: finalFailureCategory,
-    checks: summary.checks,
+    checks: [selected.check, ...summary.checks],
     stdout_excerpt: excerpt.slice(0, 1200),
-    next,
+    ready_after: readyAfter,
     notes,
   });
 
   console.log(`Result: ${summary.result === "pass" ? "success" : "fail"}`);
-  if (next) console.log(`Next task: ${next}`);
+  console.log(`Ready after run: ${readyAfter.length > 0 ? readyAfter.join(", ") : "none"}`);
   return summary.result === "pass" ? 0 : 1;
 }
 

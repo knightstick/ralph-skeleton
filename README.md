@@ -21,9 +21,9 @@ Each iteration now runs Codex automatically with hardcoded settings:
 
 ## Core scripts
 - `npm run loop:status`  
-  Show queue and next task summary.
+  Show queue state plus the current ready task set.
 - `npm run loop:run`  
-  Run the next Ralph iteration (task selection + Codex execution + checks + state update).
+  Run one Ralph iteration (fresh task selection + Codex execution + checks + state update).
 - `npm run once`  
   Alias for one iteration.
 - `npm run typecheck`  

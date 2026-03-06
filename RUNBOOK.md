@@ -7,14 +7,14 @@ Purpose
 Loop startup sequence
 1. Read `ARCHITECTURE.md` (how harness pieces fit together).
 2. Read `RUNBOOK.md` (operating rules and recovery).
-3. Read `TASKS.md` and identify next executable task:
-   - `status == pending`
+3. Read `TASKS.md` and identify the executable candidate set:
+   - `status in {pending, blocked, failed}`
    - all `dependencies` are `done`
-   - lowest `priority` first.
 4. Read `PROGRESS.md` for last failure context.
-5. Execute one loop iteration so the harness runs Codex against that task.
-6. Record outcome in `PROGRESS.md`.
-7. Run via `npm run once` (alias for one TypeScript iteration).
+5. Let a fresh Codex selector choose exactly one task from the candidate set using current repo state.
+6. Execute one loop iteration so the harness runs Codex against that chosen task.
+7. Record outcome in `PROGRESS.md`.
+8. Run via `npm run once` (alias for one TypeScript iteration).
 
 Initial bootstrap
 1. Install dependencies: `npm install`
@@ -71,9 +71,9 @@ Default failure policy
 - If `environment` fails: note remediation commands and mark task `blocked`.
 - If `human_decision` is required: pause with clear notes and request review.
 
-Next action format
+Follow-up format
 - Every progress entry must include:
-  - next best task id
+  - ready task ids after the run
   - fallback if blocked
   - expected owner for follow-up
 

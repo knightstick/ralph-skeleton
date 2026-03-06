@@ -2,7 +2,7 @@
 
 Purpose
 - Append-only execution log used by the Ralph loop.
-- Each iteration should record attempt, check outcomes, and explicit next action.
+- Each iteration should record attempt, check outcomes, and the ready set after the run.
 
 Entry schema (append one entry per loop iteration)
 - `timestamp_utc` — ISO-8601 timestamp.
@@ -11,7 +11,7 @@ Entry schema (append one entry per loop iteration)
 - `checks` — each check name + command + status (`pass` / `fail` / `skip`) + exit code.
 - `stdout_excerpt` — short excerpt of key output if failed (or successful verification summary).
 - `result` — `success` or `fail`.
-- `next` — chosen next task id.
+- `ready_after` — executable task ids after the run. Historical entries may still use `next`.
 - `notes` — human notes and follow-up.
 
 Format
@@ -27,7 +27,7 @@ Format
       command: pnpm lint
   stdout_excerpt: |
     All checks passed.
-  next: T-003
+  ready_after: [T-003]
   notes: |
     Parser strict validation added; one edge case deferred for T-003.
 ```
@@ -229,3 +229,30 @@ Log
   next: T-005
   notes: |
     Removed manual agent/task override paths, aligned docs with fixed Codex execution, and kept queue state unchanged.
+
+
+- timestamp_utc: 2026-03-06T10:22:41Z
+  task_id: unknown
+  agent_prompt: Shift task prioritization to fresh agent selection instead of persisted next-task guidance.
+  result: success
+  failure_category: none
+  checks:
+    - name: typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run typecheck
+      required: true
+    - name: loop_status
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run loop:status
+      required: true
+  stdout_excerpt: |
+    Ready set now reports T-005 (pending).
+    Task choice is deferred to a fresh Codex selector at run time.
+    PROGRESS.md now records ready_after instead of a fixed next task for new entries.
+  ready_after: [T-005]
+  notes: |
+    Reworked the harness so it computes executable candidates, asks a fresh Codex session to choose one, and avoids carrying forward a previous iteration's next-task decision.

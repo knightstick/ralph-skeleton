@@ -20,15 +20,15 @@ Use this file as the short, practical checklist.
 If this is your first run in a fresh session, stop after status and continue from step 2.
 
 Quick interpretation:
-- `Next: T-XXX` = that is the next task the harness will hand to Codex
-- `Next: T-XXX (retry blocked)` = re-run or fix that task first
-- `Next: none` = queue is done, or something is inconsistent enough that you should inspect `TASKS.md`
+- `Ready: ...` = executable tasks the harness has validated from `TASKS.md`
+- `Next: chosen fresh by agent at run time` = the next Codex session will choose from the ready set using current repo state
 - `Pending > 0` = there is still work left
 - `Blocked > 0` or `Failed > 0` = inspect `PROGRESS.md` before doing anything else
 
 2) Understand what `npm run once` now does
 - `npm run once` only:
-  - selects the next task
+  - computes the current ready task set
+  - asks a fresh Codex session to choose one task from that set
   - runs Codex on that task using the hardcoded settings above
   - runs that task's acceptance checks
   - updates `TASKS.md` and `PROGRESS.md`
@@ -36,22 +36,22 @@ Quick interpretation:
 
 3) The no-thinking loop
 - Run `npm run loop:status`
-- Read the `Next:` line
+- Read the `Ready:` line
 - Run `npm run once`
 - If it passes:
   - the harness marks the task done
-  - the next task appears in `npm run loop:status`
+  - the ready set updates in `npm run loop:status`
 - If it fails:
   - open the newest entry in `PROGRESS.md`
   - inspect the failing task in `TASKS.md`
   - decide whether to retry immediately or patch the repo manually
   - run `npm run once` again
-- Repeat until `Next: none`
+- Repeat until `Ready: none`
 
 4) Current expected workflow in this repo
 - The harness-infrastructure tasks are already done.
-- If `npm run loop:status` shows `Next: T-005`, that means you are now at the first real app-building task.
-- At that point, `npm run once` will invoke Codex automatically against `T-005`.
+- If `npm run loop:status` shows `Ready: T-005 (pending)`, that means the first real app-building task is currently executable.
+- At that point, `npm run once` will invoke a fresh Codex selector and then run the chosen ready task.
 
 5) Manual app verification (when app tasks are available)
 Run these only after the matching app tasks exist:

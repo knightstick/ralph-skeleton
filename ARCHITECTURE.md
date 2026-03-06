@@ -8,7 +8,8 @@ Core modules (target)
   - Reads/writes `TASKS.md`, `PROGRESS.md`.
   - Validates task schema and status transitions.
 - `Selector`
-  - Selects the next executable task by status/priority/dependencies.
+  - Computes the executable candidate set by status/dependencies.
+  - Delegates final task choice to a fresh agent invocation.
 - `AgentInvoker`
   - Executes the selected task in a fresh, narrow context.
   - Provides strict minimal prompt and expected output.
@@ -35,11 +36,12 @@ Execution stack
 
 Data flow
 1. Controller reads `TASKS.md` and `PROGRESS.md`.
-2. Selector computes next task.
-3. `src/ralph-loop.ts` runs only that task.
-4. Verifier evaluates declared checks.
-5. StateRecorder persists status and progress entry.
-6. Loop ends on queue exhaustion, hard failure threshold, or manual stop.
+2. Selector computes executable candidates.
+3. A fresh Codex selector chooses one candidate to run.
+4. `src/ralph-loop.ts` runs only that chosen task.
+5. Verifier evaluates declared checks.
+6. StateRecorder persists status and progress entry.
+7. Loop ends on queue exhaustion, hard failure threshold, or manual stop.
 
 State artifacts
 - `TASKS.md`
