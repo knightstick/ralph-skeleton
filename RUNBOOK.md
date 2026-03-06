@@ -85,3 +85,7 @@ Command examples
 - Check queue: `npm run loop:status`
 - Run the full loop: `npm run loop:run`
 - Run one iteration only: `npm run once`
+- App typecheck: `npm run app:typecheck`
+- App build: `npm run app:build`
+- App health smoke: `npm run app:health`
+- App startup check: `npm run app:start`

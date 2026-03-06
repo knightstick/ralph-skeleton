@@ -600,3 +600,89 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+- timestamp_utc: 2026-03-06T10:52:24Z
+  task_id: T-009
+  agent_prompt: Task T-009 | Publish app runbook for operator handoff | Update README with a short operator runbook for running app typecheck/build and startup checks from the CLI.
+  result: fail
+  failure_category: environment
+  checks:
+    - name: readme_contains_app
+      status: fail
+      exit_code: 1
+      failure_category: environment
+      command: npx tsx -e "const fs=require('node:fs'); const text=fs.readFileSync('README.md','utf8'); if (!text.includes('app')) process.exit(1);"
+      required: true
+    - name: runbook_contains_app_typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
+      required: true
+    - name: app_typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:typecheck
+      required: false
+    - name: app_build
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:build
+      required: false
+    - name: app_health
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:health
+      required: false
+    - name: app_start
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:start
+      required: false
+  stdout_excerpt: |
+    README and RUNBOOK were updated with app operator commands. The required `npx tsx -e` README probe failed before evaluating the file contents because `tsx` could not create its IPC pipe: `listen EPERM`.
+    Verified separately: `npm run app:typecheck`, `npm run app:build`, `npm run app:health`, and `npm run app:start` all passed, with the smoke/start commands printing `ralph-app:ok`.
+  ready_after: [T-009]
+  notes: |
+    Fallback if blocked: rerun T-009 in an environment where the `tsx` CLI may create its IPC pipe, or update the outer verifier runtime to avoid `npx tsx -e` for README assertions.
+    Expected owner for follow-up: agent after environment remediation or verifier adjustment.
+
+- timestamp_utc: 2026-03-06T10:52:59Z
+  task_id: T-009
+  agent_prompt: Task T-009 | Publish app runbook for operator handoff | Update README with a short operator runbook for running app typecheck/build and startup checks from the CLI.
+  result: success
+  failure_category: none
+  checks:
+    - name: agent_selector
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: agent_command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npx tsx -e "const fs=require('node:fs'); const text=fs.readFileSync('README.md','utf8'); if (!text.includes('app')) process.exit(1);"
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
+      required: true
+  stdout_excerpt: |
+    agent_command=pass command=pass command=pass
+  ready_after: []
+  notes: |
+    Completed via ralph-loop.ts
+

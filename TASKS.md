@@ -206,7 +206,7 @@ Tasks
 
 - id: T-009
   title: Publish app runbook for operator handoff
-  status: pending
+  status: done
   priority: 80
   dependencies: [T-008]
   owner: agent
@@ -221,6 +221,7 @@ Tasks
       command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
       required: true
       timeout_seconds: 20
+
 
 
 

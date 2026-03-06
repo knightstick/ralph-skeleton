@@ -32,6 +32,22 @@ Each iteration now runs Codex automatically with hardcoded settings:
 - `npm run typecheck`  
   Run TypeScript type-check for harness code.
 
+## App Operator Runbook
+Run these from the repository root when handing the app off or validating a local startup path:
+
+1. Verify app types:
+   - `npm run app:typecheck`
+2. Produce the app build output:
+   - `npm run app:build`
+3. Run the app health smoke check:
+   - `npm run app:health`
+   - expected output: `ralph-app:ok`
+4. Start the app from the CLI:
+   - `npm run app:start`
+   - expected output: `ralph-app:ok`
+
+If any command fails, stop the handoff and capture the failing command plus output in `PROGRESS.md`.
+
 ## Troubleshooting
 - Validation or parse issues are recorded in `PROGRESS.md` under `failure_category: validation`.
 - Execution issues are recorded as `failure_category: execution` or `environment`.
