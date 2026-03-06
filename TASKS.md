@@ -124,3 +124,98 @@ Tasks
       required: true
       timeout_seconds: 10
   notes: Provides operator guidance while harness matures.
+
+- id: T-005
+  title: Add runnable app scaffold
+  status: pending
+  priority: 40
+  dependencies: [T-003, T-004]
+  owner: agent
+  objective: |
+    Create a minimal TypeScript app skeleton under `src/app/` with a single entrypoint and a named health contract file.
+  acceptance:
+    - type: file_exists
+      path: src/app/index.ts
+      required: true
+    - type: file_exists
+      path: src/app/health.ts
+      required: true
+  notes: Atomic change: only introduces two concrete files for app entry and health contract.
+
+- id: T-006
+  title: Add app-level TypeScript config and scripts
+  status: pending
+  priority: 50
+  dependencies: [T-005]
+  owner: agent
+  objective: |
+    Add `tsconfig.app.json` and app scripts in `package.json` for typecheck, build, and start.
+  acceptance:
+    - type: file_exists
+      path: tsconfig.app.json
+      required: true
+    - type: command
+      command: node -e "const fs=require('node:fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const scripts=pkg.scripts||{}; ['app:typecheck','app:build','app:start'].forEach((name)=>{ if(!scripts[name]) process.exit(1); });"
+      required: true
+      timeout_seconds: 20
+    - type: command
+      command: node -e "const fs=require('node:fs'); const cfg=JSON.parse(fs.readFileSync('tsconfig.app.json','utf8')); if (!cfg.compilerOptions || !Array.isArray(cfg.include) || !cfg.include.includes('src/app/**/*')) process.exit(1);"
+      required: true
+      timeout_seconds: 20
+  notes: Ensures deterministic app toolchain exists before executing app logic tasks.
+
+- id: T-007
+  title: Add deterministic app typecheck and build verification
+  status: pending
+  priority: 60
+  dependencies: [T-006]
+  owner: agent
+  objective: |
+    Wire app scripts to actual verifier-compatible checks so typecheck and build are machine-asserted each iteration.
+  acceptance:
+    - type: command
+      command: npm run app:typecheck
+      required: true
+      timeout_seconds: 60
+    - type: command
+      command: npm run app:build
+      required: true
+      timeout_seconds: 120
+  notes: Deterministic checks are command-based and directly validate TypeScript correctness/bundling.
+
+- id: T-008
+  title: Add executable health smoke contract
+  status: pending
+  priority: 70
+  dependencies: [T-007]
+  owner: agent
+  objective: |
+    Add a small scriptable health check check that can be run without external services or credentials.
+  acceptance:
+    - type: command
+      command: npx tsx -e "import('./src/app/health.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+      timeout_seconds: 20
+    - type: command
+      command: npx tsx -e "import('./src/app/index.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+      timeout_seconds: 20
+  notes: Keeps smoke validation close to the declared app contract and lightweight.
+
+- id: T-009
+  title: Publish app runbook for operator handoff
+  status: pending
+  priority: 80
+  dependencies: [T-008]
+  owner: agent
+  objective: |
+    Update README with a short operator runbook for running app typecheck/build and startup checks from the CLI.
+  acceptance:
+    - type: command
+      command: npx tsx -e "const fs=require('node:fs'); const text=fs.readFileSync('README.md','utf8'); if (!text.includes('app')) process.exit(1);"
+      required: true
+      timeout_seconds: 20
+    - type: command
+      command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
+      required: true
+      timeout_seconds: 20
