@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "loop": "tsx src/ralph-loop.ts",
+    "loop": "node --import tsx src/ralph-loop.ts",
     "once": "npm run loop -- run",
     "loop:status": "npm run loop -- status",
     "loop:run": "npm run loop -- run",

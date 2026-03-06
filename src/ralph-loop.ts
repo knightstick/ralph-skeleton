@@ -187,7 +187,11 @@ export function parseTasks(path: string): [Task[], string[]] {
     const start = taskStarts[i]!;
     const end = taskStarts[i + 1] ?? lines.length;
     const block = lines.slice(start, end).join("\n");
-    const loaded = yaml.load(block);
+    const loadedNode = yaml.load(block);
+    const loaded = Array.isArray(loadedNode)
+      ? (loadedNode.length === 1 ? loadedNode[0] : null)
+      : loadedNode;
+
     if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
       throw new Error(`Invalid task block near line ${start + 1}: not a mapping`);
     }

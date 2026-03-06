@@ -105,7 +105,8 @@ Tasks
     Add command execution with structured exit-code reporting and timeout handling for lint/typecheck/tests/build.
   acceptance:
     - type: command
-      command: npx tsx -e "import { runCheck } from './src/ralph-loop.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
+      command: |
+        npx tsx -e "import { runCheck } from './src/ralph-loop.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
       required: true
       timeout_seconds: 20
   notes: Follow-up task for Phase 2.
@@ -140,7 +141,7 @@ Tasks
     - type: file_exists
       path: src/app/health.ts
       required: true
-  notes: Atomic change: only introduces two concrete files for app entry and health contract.
+  notes: "Atomic change: only introduces two concrete files for app entry and health contract."
 
 - id: T-006
   title: Add app-level TypeScript config and scripts
