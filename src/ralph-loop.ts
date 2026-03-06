@@ -517,25 +517,25 @@ function statusReport(tasks: Task[]): string {
   ].join("\n");
 }
 
-function parseCommand(argv: string[]): "run" | "status" | null {
+type Command = "once" | "run" | "status";
+
+function parseCommand(argv: string[]): Command | null {
   if (argv.length !== 1) return null;
-  return argv[0] === "run" || argv[0] === "status" ? argv[0] : null;
+  return argv[0] === "once" || argv[0] === "run" || argv[0] === "status" ? argv[0] : null;
 }
 
 function printUsage(): never {
   const help = `
 Usage:
   npm run loop:status
+  npm run once
   npm run loop:run
 `.trim();
   console.log(help);
   process.exit(2);
 }
 
-async function main(): Promise<number> {
-  const command = parseCommand(process.argv.slice(2));
-  if (!command) return printUsage();
-
+function loadTasksOrRecordValidationFailure(): { tasks: Task[]; rawLines: string[] } | null {
   let tasks: Task[] = [];
   let rawLines: string[] = [];
   try {
@@ -554,12 +554,16 @@ async function main(): Promise<number> {
       notes: "Failed while parsing TASKS.md",
     });
     console.log(`Validation error: ${message}`);
-    return 1;
+    return null;
   }
 
-  if (command === "status") {
-    console.log(statusReport(tasks));
-    return 0;
+  return { tasks, rawLines };
+}
+
+async function runSingleIteration(tasks: Task[], rawLines: string[]): Promise<"pass" | "fail" | "idle"> {
+  if (executableTasks(tasks).length === 0) {
+    console.log("No executable task");
+    return "idle";
   }
 
   const cleanWorktreeCheck = ensureCleanWorktree();
@@ -577,14 +581,14 @@ async function main(): Promise<number> {
     });
     console.log("Refusing to run: git working tree is dirty.");
     console.log(cleanWorktreeCheck.output);
-    return 1;
+    return "fail";
   }
 
   console.log("Selecting next task with Codex...");
   const selected = await chooseTaskWithAgent(tasks);
   if (!selected) {
     console.log("No executable task");
-    return 0;
+    return "idle";
   }
   if (selected.check.status === "fail") {
     appendProgress({
@@ -599,7 +603,7 @@ async function main(): Promise<number> {
       notes: "Fresh agent task selection failed before execution.",
     });
     console.log("Task selection failed.");
-    return 1;
+    return "fail";
   }
   const task = selected.task;
   const selectionMode = selected.mode;
@@ -651,13 +655,47 @@ async function main(): Promise<number> {
   if (commitCheck.status === "fail") {
     console.log("Commit failed.");
     console.log(commitCheck.output);
-    return 1;
+    return "fail";
   }
 
   console.log(`Result: ${summary.result === "pass" ? "success" : "fail"}`);
   console.log(`Commit: ${buildCommitMessage(task, summary.result)}`);
   console.log(`Ready after run: ${readyAfter.length > 0 ? readyAfter.join(", ") : "none"}`);
-  return summary.result === "pass" ? 0 : 1;
+  return summary.result === "pass" ? "pass" : "fail";
+}
+
+async function main(): Promise<number> {
+  const command = parseCommand(process.argv.slice(2));
+  if (!command) return printUsage();
+
+  const loaded = loadTasksOrRecordValidationFailure();
+  if (!loaded) return 1;
+
+  if (command === "status") {
+    console.log(statusReport(loaded.tasks));
+    return 0;
+  }
+
+  if (command === "once") {
+    const result = await runSingleIteration(loaded.tasks, loaded.rawLines);
+    return result === "fail" ? 1 : 0;
+  }
+
+  let iterations = 0;
+  while (true) {
+    const state = iterations === 0 ? loaded : loadTasksOrRecordValidationFailure();
+    if (!state) return 1;
+
+    if (executableTasks(state.tasks).length === 0) {
+      console.log(iterations === 0 ? "No executable task" : "Loop complete: Ready: none");
+      return 0;
+    }
+
+    const result = await runSingleIteration(state.tasks, state.rawLines);
+    if (result === "fail") return 1;
+    if (result === "idle") return 0;
+    iterations += 1;
+  }
 }
 
 void main().then((code) => {

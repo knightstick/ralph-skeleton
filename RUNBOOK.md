@@ -12,15 +12,15 @@ Loop startup sequence
    - all `dependencies` are `done`
 4. Read `PROGRESS.md` for last failure context.
 5. Let a fresh Codex selector choose exactly one task from the candidate set using current repo state.
-6. Execute one loop iteration so the harness runs Codex against that chosen task.
-7. Record outcome in `PROGRESS.md`.
-8. Commit the iteration changes before exiting.
-9. Run via `npm run once` (alias for one TypeScript iteration).
+6. Execute the chosen task, verify it, record the outcome, and commit that iteration.
+7. Repeat with a fresh selector until `Ready: none` or a failed iteration stops the run.
+8. Run the full outer loop via `npm run loop:run`.
+9. Use `npm run once` only when you explicitly want a single iteration.
 
 Initial bootstrap
 1. Install dependencies: `npm install`
 2. Verify queue: `npm run loop:status`
-3. Execute one iteration: `npm run once`
+3. Execute the full loop: `npm run loop:run`
 
 Hardcoded agent settings
 - agent: `codex exec`
@@ -83,5 +83,5 @@ Follow-up format
 
 Command examples
 - Check queue: `npm run loop:status`
-- Run one task: `npm run loop:run`
-- Run one iteration (preferred alias): `npm run once`
+- Run the full loop: `npm run loop:run`
+- Run one iteration only: `npm run once`

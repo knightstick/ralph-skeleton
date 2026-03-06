@@ -418,3 +418,35 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+- timestamp_utc: 2026-03-06T10:42:55Z
+  task_id: MANUAL-20260306
+  agent_prompt: Implement the actual outer Ralph loop so `loop:run` continues task by task while `once` remains single-iteration.
+  result: success
+  failure_category: none
+  checks:
+    - name: typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run typecheck
+      required: true
+    - name: loop_status
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run loop:status
+      required: true
+    - name: cli_usage
+      status: pass
+      exit_code: 2
+      failure_category: none
+      command: node --import tsx src/ralph-loop.ts
+      required: true
+  stdout_excerpt: |
+    typecheck=pass loop:status=pass cli_usage=pass
+  ready_after: [T-007]
+  notes: |
+    User-directed manual change outside TASKS.md queue.
+    Split CLI actions into `status`, `once`, and `run`.
+    `npm run loop:run` now repeats until `Ready: none` or the first failed iteration.
+    Updated operator docs to treat `loop:run` as the default outer loop command.

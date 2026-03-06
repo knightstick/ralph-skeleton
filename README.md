@@ -9,8 +9,8 @@
    - `npm install`
 2. Inspect current state:
    - `npm run loop:status`
-3. Run one loop iteration:
-   - `npm run once`
+3. Run the full Ralph loop:
+   - `npm run loop:run`
 4. Check progress file updates:
    - `cat PROGRESS.md`
 
@@ -26,9 +26,9 @@ Each iteration now runs Codex automatically with hardcoded settings:
 - `npm run loop:status`  
   Show queue state plus the current ready task set.
 - `npm run loop:run`  
-  Run one Ralph iteration (fresh task selection + Codex execution + checks + state update).
+  Run the outer Ralph loop until `Ready: none` or the first failed iteration.
 - `npm run once`  
-  Alias for one iteration.
+  Run exactly one Ralph iteration.
 - `npm run typecheck`  
   Run TypeScript type-check for harness code.
 

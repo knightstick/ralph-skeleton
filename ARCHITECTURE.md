@@ -24,13 +24,13 @@ Core modules (target)
   - Enforces fail-fast rules and deterministic transitions.
 - `src/ralph-loop.ts`
   - CLI entrypoint that implements the loop controller in TypeScript.
-  - Supports `status` and `run` actions.
+  - Supports `status`, `once`, and `run` actions.
 
 Execution stack
 - `package.json` scripts:
   - `npm run loop:status` → `STATUS` view.
-  - `npm run loop:run` → single-iteration execution.
-  - `npm run once` → alias for single-iteration execution.
+  - `npm run loop:run` → full outer-loop execution until queue exhaustion or failure.
+  - `npm run once` → single-iteration execution.
   - `npm run typecheck` → static validation of loop implementation.
   - `npm run loop:status` → queue inspection before execution.
 
@@ -38,10 +38,10 @@ Data flow
 1. Controller reads `TASKS.md` and `PROGRESS.md`.
 2. Selector computes executable candidates.
 3. A fresh Codex selector chooses one candidate to run.
-4. `src/ralph-loop.ts` runs only that chosen task.
+4. `src/ralph-loop.ts` runs the chosen task.
 5. Verifier evaluates declared checks.
 6. StateRecorder persists status and progress entry.
-7. Loop ends on queue exhaustion, hard failure threshold, or manual stop.
+7. `run` repeats until queue exhaustion or a failed iteration; `once` stops after a single task.
 
 State artifacts
 - `TASKS.md`

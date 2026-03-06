@@ -26,7 +26,12 @@ Quick interpretation:
 - `Pending > 0` = there is still work left
 - `Blocked > 0` or `Failed > 0` = inspect `PROGRESS.md` before doing anything else
 
-2) Understand what `npm run once` now does
+2) Understand the two run modes
+- `npm run loop:run`:
+  - refuses to start if the git worktree is already dirty
+  - keeps selecting fresh ready tasks and running them one by one
+  - stops only when `Ready: none` or the first failed iteration
+  - creates one git commit per iteration before continuing
 - `npm run once` only:
   - refuses to start if the git worktree is already dirty
   - computes the current ready task set
@@ -42,22 +47,20 @@ Quick interpretation:
 - Run `npm run loop:status`
 - Run `git status --short` and confirm it is empty
 - Read the `Ready:` line
-- Run `npm run once`
-- If it passes:
-  - the harness marks the task done
-  - the ready set updates in `npm run loop:status`
-  - the loop leaves behind a commit for that task iteration
-- If it fails:
+- Run `npm run loop:run`
+- If it finishes cleanly:
+  - the harness kept going task by task until `Ready: none`
+  - the loop left behind one commit per iteration
+- If it stops on a failure:
   - open the newest entry in `PROGRESS.md`
   - inspect the failing task in `TASKS.md`
   - decide whether to retry immediately or patch the repo manually
-  - run `npm run once` again
+  - use `npm run once` for a single retry or rerun `npm run loop:run`
 - Repeat until `Ready: none`
 
 4) Current expected workflow in this repo
 - The harness-infrastructure tasks are already done.
-- If `npm run loop:status` shows `Ready: T-005 (pending)`, that means the first real app-building task is currently executable.
-- At that point, `npm run once` will invoke a fresh Codex selector and then run the chosen ready task.
+- If `npm run loop:status` shows a non-empty `Ready:` line, `npm run loop:run` will keep invoking a fresh Codex selector and executing those ready tasks until the queue is exhausted or a task fails.
 
 5) Manual app verification (when app tasks are available)
 Run these only after the matching app tasks exist:
@@ -66,7 +69,7 @@ Run these only after the matching app tasks exist:
 - `npm run app:start`
 
 6) Recovery
-- If `npm run once` refuses to start because the worktree is dirty, commit or clean those changes first.
+- If `npm run loop:run` or `npm run once` refuses to start because the worktree is dirty, commit or clean those changes first.
 - If the last command line is `Usage: ...`, it usually means a check imported the CLI entrypoint instead of a library module.
 - If you see `Validation error` from `loop:status`, inspect the task block in `TASKS.md` around the cited line.
   - Common YAML breakpoints: `command`/`notes` containing `:` or quotes, bad indentation, mixed block styles.
@@ -77,6 +80,7 @@ Run these only after the matching app tasks exist:
 - Check state: `npm run loop:status`
 - Check cleanliness before a run: `git status --short`
 - Verify harness code: `npm run typecheck`
-- Run one full Codex + verify iteration: `npm run once`
+- Run the full Ralph loop: `npm run loop:run`
+- Run one iteration only: `npm run once`
 
 Keep commits small and focused; no extra files unless task requires them.

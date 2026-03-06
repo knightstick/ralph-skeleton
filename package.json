@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "loop": "node --import tsx src/ralph-loop.ts",
-    "once": "npm run loop -- run",
+    "once": "npm run loop -- once",
     "loop:status": "npm run loop -- status",
     "loop:run": "npm run loop -- run",
-    "loop:run:task": "npm run loop -- run",
+    "loop:run:task": "npm run loop -- once",
     "typecheck": "tsc --noEmit",
     "app:typecheck": "tsc --noEmit -p tsconfig.app.json",
     "app:build": "tsc -p tsconfig.app.json",
