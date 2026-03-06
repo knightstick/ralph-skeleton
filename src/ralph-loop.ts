@@ -65,6 +65,16 @@ const REPO_ROOT = resolve(process.cwd());
 const TASKS_PATH = `${REPO_ROOT}/TASKS.md`;
 const PROGRESS_PATH = `${REPO_ROOT}/PROGRESS.md`;
 const VALID_STATUSES: Status[] = ["pending", "in_progress", "blocked", "done", "failed"];
+const AGENT_BOOTSTRAP_PROMPT = `You are the Ralph coding agent.
+Use repository memory files as the source of truth:
+- TASKS.md for queue state and acceptance checks
+- PROGRESS.md for execution history
+- RUNBOOK.md for control flow
+- ARCHITECTURE.md for module intent
+
+Run exactly one selected task per invocation and then stop.
+Do not change unrelated files.
+Do not mark done unless all required acceptance checks pass.`;
 
 function nowUtc(): string {
   const now = new Date();
@@ -410,6 +420,19 @@ function summarizeTask(task: Task): string {
   return `${task.id}: ${task.objective.replace(/\n/g, " ")}`;
 }
 
+function starterPrompt(task: Task): string {
+  return `${AGENT_BOOTSTRAP_PROMPT}
+Task:
+- id: ${task.id}
+- title: ${task.title}
+- priority: ${task.priority}
+- objective: ${task.objective}`;
+}
+
+function compactPrompt(task: Task): string {
+  return `Task ${task.id} | ${task.title} | ${task.objective.replace(/\n/g, " ")}`;
+}
+
 function statusReport(tasks: Task[]): string {
   const counts: Record<Status | "other", number> = {
     pending: 0,
@@ -532,6 +555,7 @@ function main(): number {
   updateTaskStatus(task.id, "in_progress", beforeRun);
   writeTasks(beforeRun);
   console.log(`Running: ${summarizeTask(task)}`);
+  console.log("\nStarter prompt:\n" + starterPrompt(task) + "\n");
 
   let summary = runTask(task, parsed);
   let attempts = 1;
@@ -558,7 +582,7 @@ function main(): number {
   appendProgress({
     timestamp_utc: nowUtc(),
     task_id: task.id,
-    agent_prompt: task.objective,
+    agent_prompt: compactPrompt(task),
     result: summary.result === "pass" ? "success" : "fail",
     failure_category: finalFailureCategory,
     checks: summary.checks,
