@@ -82,7 +82,7 @@ Tasks
 
 - id: T-002
   title: Design minimal loop task parser
-  status: pending
+  status: blocked
   priority: 10
   dependencies: [T-001]
   owner: agent
@@ -90,7 +90,7 @@ Tasks
     Define and implement a parser in the harness for TASKS.md task objects with strict field validation.
   acceptance:
     - type: command
-      command: npx tsx -e "import { parseTasks } from './src/ralph-loop.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+      command: npx tsx -e "import { parseTasks } from './src/ralph-loop-core.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
       required: true
       timeout_seconds: 10
   notes: Follow-up task for Phase 2.
@@ -106,7 +106,7 @@ Tasks
   acceptance:
     - type: command
       command: |
-        npx tsx -e "import { runCheck } from './src/ralph-loop.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
+        npx tsx -e "import { runCheck } from './src/ralph-loop-core.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
       required: true
       timeout_seconds: 20
   notes: Follow-up task for Phase 2.
