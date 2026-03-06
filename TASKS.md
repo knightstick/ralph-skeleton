@@ -82,7 +82,7 @@ Tasks
 
 - id: T-002
   title: Design minimal loop task parser
-  status: blocked
+  status: done
   priority: 10
   dependencies: [T-001]
   owner: agent
@@ -97,7 +97,7 @@ Tasks
 
 - id: T-003
   title: Add deterministic check runner
-  status: pending
+  status: done
   priority: 20
   dependencies: [T-002]
   owner: agent

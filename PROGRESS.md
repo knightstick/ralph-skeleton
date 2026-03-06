@@ -119,3 +119,87 @@ Log
   notes: |
     Execution failed; automatically retried once.
 
+
+- timestamp_utc: 2026-03-06T09:39:45Z
+  task_id: T-002
+  agent_prompt: Task T-002 | Design minimal loop task parser | Define and implement a parser in the harness for TASKS.md task objects with strict field validation.
+  result: fail
+  failure_category: execution
+  checks:
+    - name: command
+      status: fail
+      exit_code: 1
+      failure_category: execution
+      command: npx tsx -e "import { parseTasks } from './src/ralph-loop-core.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+      required: true
+  stdout_excerpt: |
+    node:internal/errors:496
+        ErrorCaptureStackTrace(err);
+        ^
+    
+    Error: listen EPERM: operation not permitted /var/folders/z3/y6wys29d36v24b98ws5dt7t40000gn/T/tsx-501/20475.pipe
+        at Server.setupListenHandle [as _listen2] (node:net:1800:21)
+        at listenInCluster (node:net:1865:12)
+        at Server.listen (node:net:1964:5)
+        at file:///Users/chris/Developer/ralph-skeleton/node_modules/tsx/dist/cli.mjs:53:31537
+        at new Promise (<anonymous>)
+        at createIpcServer (file:///Users/chris/Developer/ralph-skeleton/node_modules/tsx/dist/cli.mjs:53:31515)
+        at async file:///Users/chris/Developer/ralph-skeleton/node_modules/tsx/dist/cli.mjs:55:459 {
+      code: 'EPERM',
+      errno: -1,
+      syscall: 'listen',
+      address: '/var/folders/z3/y6wys29d36v24b98ws5dt7t40000gn/T/tsx-501/20475.pipe',
+      port: -1
+    }
+    
+    Node.js v18.20.8
+    
+    Command failed: npx tsx -e "import { parseTasks } from './src/ralph-loop-core.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+    node:internal/errors:496
+        ErrorCaptureStackTrace(err);
+        ^
+    
+    Error: listen EPERM: operation not permitted /var/folders/z3/y6wys29d36v24b98ws5dt7t4000
+  next: none
+  notes: |
+    Execution failed; automatically retried once.
+
+
+- timestamp_utc: 2026-03-06T09:40:09Z
+  task_id: T-002
+  agent_prompt: Task T-002 | Design minimal loop task parser | Define and implement a parser in the harness for TASKS.md task objects with strict field validation.
+  result: success
+  failure_category: none
+  checks:
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npx tsx -e "import { parseTasks } from './src/ralph-loop-core.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+      required: true
+  stdout_excerpt: |
+    command=pass
+  next: T-003
+  notes: |
+    Completed via ralph-loop.ts
+
+
+- timestamp_utc: 2026-03-06T09:40:37Z
+  task_id: T-003
+  agent_prompt: Task T-003 | Add deterministic check runner | Add command execution with structured exit-code reporting and timeout handling for lint/typecheck/tests/build.
+  result: success
+  failure_category: none
+  checks:
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npx tsx -e "import { runCheck } from './src/ralph-loop-core.ts'; const ok = runCheck({type: 'command', command: 'exit 0', timeout_seconds: 1, required: true}); if (ok.status !== 'pass') process.exit(1); const timeoutFail = runCheck({type: 'command', command: 'sleep 2', timeout_seconds: 1, required: true}); if (timeoutFail.status !== 'fail' || timeoutFail.failure_category !== 'execution') process.exit(1);"
+
+      required: true
+  stdout_excerpt: |
+    command=pass
+  next: T-005
+  notes: |
+    Completed via ralph-loop.ts
+
