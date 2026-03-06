@@ -168,7 +168,7 @@ Tasks
 
 - id: T-007
   title: Add deterministic app typecheck and build verification
-  status: pending
+  status: done
   priority: 60
   dependencies: [T-006]
   owner: agent
@@ -221,5 +221,6 @@ Tasks
       command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
       required: true
       timeout_seconds: 20
+
 
 

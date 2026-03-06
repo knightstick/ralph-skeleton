@@ -450,3 +450,65 @@ Log
     Split CLI actions into `status`, `once`, and `run`.
     `npm run loop:run` now repeats until `Ready: none` or the first failed iteration.
     Updated operator docs to treat `loop:run` as the default outer loop command.
+
+- timestamp_utc: 2026-03-06T10:45:53Z
+  task_id: T-007
+  agent_prompt: "Run T-007 with deterministic app typecheck and build verification."
+  result: success
+  failure_category: none
+  checks:
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:typecheck
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:build
+      required: true
+  stdout_excerpt: |
+    app:typecheck=pass app:build=pass
+  ready_after: [T-008]
+  notes: |
+    Existing `package.json` app scripts already invoked deterministic `tsc` checks compatible with the verifier.
+    No application source changes were required for this iteration.
+
+- timestamp_utc: 2026-03-06T10:46:28Z
+  task_id: T-007
+  agent_prompt: Task T-007 | Add deterministic app typecheck and build verification | Wire app scripts to actual verifier-compatible checks so typecheck and build are machine-asserted each iteration.
+  result: success
+  failure_category: none
+  checks:
+    - name: agent_selector
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: agent_command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:typecheck
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:build
+      required: true
+  stdout_excerpt: |
+    agent_command=pass command=pass command=pass
+  ready_after: [T-008]
+  notes: |
+    Completed via ralph-loop.ts
+
