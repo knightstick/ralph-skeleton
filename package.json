@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "app:typecheck": "tsc --noEmit -p tsconfig.app.json",
     "app:build": "tsc -p tsconfig.app.json",
+    "app:health": "node --import tsx src/app/health.ts",
     "app:start": "node --import tsx src/app/index.ts"
   },
   "devDependencies": {

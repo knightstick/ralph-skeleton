@@ -1,7 +1,7 @@
-import { getAppHealth } from "./health";
+import { runAppHealthSmokeCheck } from "./health";
 
 export function startApp(): string {
-  const health = getAppHealth();
+  const health = runAppHealthSmokeCheck();
   return `${health.service}:${health.status}`;
 }
 

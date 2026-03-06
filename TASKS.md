@@ -187,7 +187,7 @@ Tasks
 
 - id: T-008
   title: Add executable health smoke contract
-  status: pending
+  status: done
   priority: 70
   dependencies: [T-007]
   owner: agent
@@ -221,6 +221,7 @@ Tasks
       command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
       required: true
       timeout_seconds: 20
+
 
 
 

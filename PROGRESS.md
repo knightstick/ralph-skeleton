@@ -512,3 +512,91 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+- timestamp_utc: 2026-03-06T10:48:54Z
+  task_id: T-008
+  agent_prompt: "Task T-008 | Add executable health smoke contract | Add a small scriptable health check check that can be run without external services or credentials."
+  result: fail
+  failure_category: environment
+  checks:
+    - name: command
+      status: fail
+      exit_code: 1
+      failure_category: environment
+      command: npx tsx -e "import('./src/app/health.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+    - name: command
+      status: fail
+      exit_code: 1
+      failure_category: environment
+      command: npx tsx -e "import('./src/app/index.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+    - name: smoke_cli
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:health
+      required: false
+    - name: smoke_import
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node --import tsx -e "import('./src/app/health.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: false
+    - name: app_start_import
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node --import tsx -e "import('./src/app/index.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: false
+    - name: app_typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:typecheck
+      required: false
+  stdout_excerpt: |
+    Added `runAppHealthSmokeCheck()` in `src/app/health.ts` and `npm run app:health`.
+    `npm run app:health` prints `ralph-app:ok`.
+    The required `npx tsx -e` acceptance commands fail in this sandbox with `Error: listen EPERM: operation not permitted ... createIpcServer ... *.pipe`.
+    Equivalent `node --import tsx -e "import(...)"` commands pass for both `src/app/health.ts` and `src/app/index.ts`.
+  ready_after: [T-008]
+  notes: |
+    Fallback if blocked: rerun T-008 in an environment where the `tsx` CLI may create its IPC pipe, or update the outer verifier runtime to use `node --import tsx` instead of `npx tsx -e`.
+    Expected owner for follow-up: agent after environment remediation or verifier adjustment.
+
+- timestamp_utc: 2026-03-06T10:50:00Z
+  task_id: T-008
+  agent_prompt: Task T-008 | Add executable health smoke contract | Add a small scriptable health check check that can be run without external services or credentials.
+  result: success
+  failure_category: none
+  checks:
+    - name: agent_selector
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: agent_command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npx tsx -e "import('./src/app/health.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npx tsx -e "import('./src/app/index.ts').then(() => process.exit(0)).catch(() => process.exit(1))"
+      required: true
+  stdout_excerpt: |
+    agent_command=pass command=pass command=pass
+  ready_after: [T-009]
+  notes: |
+    Completed via ralph-loop.ts
+
