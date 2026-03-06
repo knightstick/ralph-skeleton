@@ -8,7 +8,10 @@
     "loop:status": "npm run loop -- status",
     "loop:run": "npm run loop -- run",
     "loop:run:task": "npm run loop -- run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "app:typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "app:build": "tsc -p tsconfig.app.json",
+    "app:start": "node --import tsx src/app/index.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

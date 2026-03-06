@@ -325,3 +325,96 @@ Log
   notes: |
     Completed via ralph-loop.ts
 
+- timestamp_utc: 2026-03-06T10:37:51Z
+  task_id: T-006
+  agent_prompt: Task T-006 | Add app-level TypeScript config and scripts | Add `tsconfig.app.json` and app scripts in `package.json` for typecheck, build, and start.
+  result: success
+  failure_category: none
+  checks:
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: tsconfig.app.json
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node -e "const fs=require('node:fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const scripts=pkg.scripts||{}; ['app:typecheck','app:build','app:start'].forEach((name)=>{ if(!scripts[name]) process.exit(1); });"
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node -e "const fs=require('node:fs'); const cfg=JSON.parse(fs.readFileSync('tsconfig.app.json','utf8')); if (!cfg.compilerOptions || !Array.isArray(cfg.include) || !cfg.include.includes('src/app/**/*')) process.exit(1);"
+      required: true
+    - name: app:typecheck
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:typecheck
+      required: false
+    - name: app:build
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:build
+      required: false
+    - name: app:start
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: npm run app:start
+      required: false
+  stdout_excerpt: |
+    file_exists=pass scripts_present=pass tsconfig_shape=pass app:typecheck=pass app:build=pass app:start=pass
+    app:start output: ralph-app:ok
+  ready_after: [T-007]
+  notes: |
+    Added tsconfig.app.json with app-only include and dist/app output.
+    Added app:typecheck, app:build, and app:start scripts in package.json.
+    Follow-up owner: agent.
+
+- timestamp_utc: 2026-03-06T10:38:41Z
+  task_id: T-006
+  agent_prompt: Task T-006 | Add app-level TypeScript config and scripts | Add `tsconfig.app.json` and app scripts in `package.json` for typecheck, build, and start.
+  result: success
+  failure_category: none
+  checks:
+    - name: agent_selector
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: agent_command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: codex -m gpt-5.4 -c model_reasoning_effort="high" -s workspace-write -a never -C /Users/chris/Developer/ralph-skeleton exec
+      required: true
+    - name: file_exists
+      status: pass
+      exit_code: 0
+      failure_category: none
+      path: tsconfig.app.json
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node -e "const fs=require('node:fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const scripts=pkg.scripts||{}; ['app:typecheck','app:build','app:start'].forEach((name)=>{ if(!scripts[name]) process.exit(1); });"
+      required: true
+    - name: command
+      status: pass
+      exit_code: 0
+      failure_category: none
+      command: node -e "const fs=require('node:fs'); const cfg=JSON.parse(fs.readFileSync('tsconfig.app.json','utf8')); if (!cfg.compilerOptions || !Array.isArray(cfg.include) || !cfg.include.includes('src/app/**/*')) process.exit(1);"
+      required: true
+  stdout_excerpt: |
+    agent_command=pass file_exists=pass command=pass command=pass
+  ready_after: [T-007]
+  notes: |
+    Completed via ralph-loop.ts
+

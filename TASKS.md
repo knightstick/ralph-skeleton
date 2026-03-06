@@ -146,7 +146,7 @@ Tasks
 
 - id: T-006
   title: Add app-level TypeScript config and scripts
-  status: pending
+  status: done
   priority: 50
   dependencies: [T-005]
   owner: agent
@@ -221,4 +221,5 @@ Tasks
       command: test -f RUNBOOK.md && grep -q 'app:typecheck' RUNBOOK.md
       required: true
       timeout_seconds: 20
+
 
