@@ -24,6 +24,7 @@ You are running a Ralph loop harness. Use this as your only source of progress.
 
 5) Recovery
 - If parser/check fails, inspect command output and rerun task once after fix
+- If you see `Validation error` from `loop:status`, inspect the `TASKS.md` task block around the line number for YAML issues (especially `command` and `notes` containing `:` or quotes).
 - If blocked by env/binary issues, resolve tooling first (`node`, `tsx`) then continue
 
 Keep commits small and focused; no extra files unless task requires them.
