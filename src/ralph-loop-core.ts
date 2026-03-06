@@ -169,7 +169,6 @@ function runCommand(command: string, timeoutSeconds = 120): CheckResult {
       timeout: timeoutSeconds * 1000,
       stdio: "pipe",
       encoding: "utf8",
-      shell: true,
     });
     return {
       name: "command",

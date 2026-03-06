@@ -49,3 +49,73 @@ Log
   next: T-004
   notes: |
     Baseline memory files initialized.
+
+- timestamp_utc: 2026-03-06T09:25:45Z
+  task_id: unknown
+  agent_prompt: TASKS.md validation
+  result: fail
+  failure_category: validation
+  checks:
+  stdout_excerpt: |
+    Invalid task block near line 56: not a mapping
+  next: none
+  notes: |
+    Failed while parsing TASKS.md
+
+
+- timestamp_utc: 2026-03-06T09:26:54Z
+  task_id: unknown
+  agent_prompt: TASKS.md validation
+  result: fail
+  failure_category: validation
+  checks:
+  stdout_excerpt: |
+    Invalid task block near line 56: not a mapping
+  next: none
+  notes: |
+    Failed while parsing TASKS.md
+
+
+- timestamp_utc: 2026-03-06T09:27:19Z
+  task_id: unknown
+  agent_prompt: TASKS.md validation
+  result: fail
+  failure_category: validation
+  checks:
+  stdout_excerpt: |
+    bad indentation of a mapping entry (16:23)
+    
+     13 |     - type: file_exists
+     14 |       path: src/app/health.ts
+     15 |       required: true
+     16 |   notes: Atomic change: only introduces two concrete  ...
+    ----------------------------^
+  next: none
+  notes: |
+    Failed while parsing TASKS.md
+
+
+- timestamp_utc: 2026-03-06T09:29:06Z
+  task_id: T-002
+  agent_prompt: Task T-002 | Design minimal loop task parser | Define and implement a parser in the harness for TASKS.md task objects with strict field validation.
+  result: fail
+  failure_category: execution
+  checks:
+    - name: command
+      status: fail
+      exit_code: 2
+      failure_category: execution
+      command: npx tsx -e "import { parseTasks } from './src/ralph-loop.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+      required: true
+  stdout_excerpt: |
+    Usage:
+      npm run loop:status
+      npm run loop:run
+      npm run loop:run -- --task-id T-002
+      npm run loop:run -- --agent-cmd "echo done"
+    
+    Command failed: npx tsx -e "import { parseTasks } from './src/ralph-loop.ts'; const [tasks] = parseTasks('TASKS.md'); if (tasks.length < 4) process.exit(1); if (!tasks.some((task) => task.id === 'T-002')) process.exit(1);"
+  next: none
+  notes: |
+    Execution failed; automatically retried once.
+

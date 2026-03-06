@@ -22,6 +22,11 @@ interface RunSummary {
   failureCategory: FailureCategory;
 }
 
+interface TaskSelection {
+  task: Task;
+  mode: "pending" | "retry";
+}
+
 const AUTO_RETRYABLE_CATEGORIES: FailureCategory[] = ["execution"];
 const AUTO_RETRY_MESSAGE = "Execution failed; automatically retried once.";
 
@@ -61,6 +66,37 @@ function nextTask(tasks: Task[]): Task | null {
   if (!ready.length) return null;
   ready.sort((a, b) => a.priority - b.priority);
   return ready[0] ?? null;
+}
+
+function nextRetryableTask(tasks: Task[]): Task | null {
+  const statusById = new Map<string, string>();
+  for (const task of tasks) statusById.set(task.id, task.status);
+
+  const retryable: Task[] = [];
+  for (const task of tasks) {
+    if (task.status !== "blocked" && task.status !== "failed") continue;
+    if (task.dependencies.every((dep) => statusById.get(dep) === "done")) retryable.push(task);
+  }
+  if (!retryable.length) return null;
+  retryable.sort((a, b) => a.priority - b.priority);
+  return retryable[0] ?? null;
+}
+
+function selectTask(tasks: Task[]): TaskSelection | null {
+  const pendingTask = nextTask(tasks);
+  if (pendingTask) {
+    return {
+      task: pendingTask,
+      mode: "pending",
+    };
+  }
+
+  const retryableTask = nextRetryableTask(tasks);
+  if (!retryableTask) return null;
+  return {
+    task: retryableTask,
+    mode: "retry",
+  };
 }
 
 function computeNextAfter(tasks: Task[], doneId: string): string | null {
@@ -115,7 +151,6 @@ function runCommand(command: string, timeoutSeconds = 120): CheckResult {
       timeout: timeoutSeconds * 1000,
       stdio: "pipe",
       encoding: "utf8",
-      shell: true,
     });
     return {
       name: "command",
@@ -156,7 +191,7 @@ function deriveFailureCategoryFromChecks(checks: CheckResult[]): FailureCategory
 function runTask(task: Task, args: CLIArgs): RunSummary {
   const checks: CheckResult[] = [];
   if (args.agentCmd) {
-    const agentResult = runCommand(args.agentCmd, Number.parseInt(args.timeout, 10));
+    const agentResult = runCommand(args.agentCmd, Number.parseInt(args.timeout ?? "120", 10));
     checks.push({
       name: "agent_command",
       status: agentResult.status,
@@ -265,14 +300,19 @@ function statusReport(tasks: Task[]): string {
     else counts.other += 1;
   }
 
-  const next = nextTask(tasks);
+  const selection = selectTask(tasks);
+  const nextLabel = selection
+    ? selection.mode === "pending"
+      ? selection.task.id
+      : `${selection.task.id} (retry ${selection.task.status})`
+    : "none";
   return [
     `Pending: ${counts.pending}`,
     `In Progress: ${counts.in_progress}`,
     `Done: ${counts.done}`,
     `Failed: ${counts.failed}`,
     `Blocked: ${counts.blocked}`,
-    `Next: ${next?.id ?? "none"}`,
+    `Next: ${nextLabel}`,
   ].join("\n");
 }
 
@@ -280,7 +320,7 @@ interface CLIArgs {
   command: "run" | "status";
   taskId?: string;
   agentCmd?: string;
-  timeout: string;
+  timeout?: string;
 }
 
 function parseArgs(argv: string[]): CLIArgs | null {
@@ -350,28 +390,33 @@ function main(): number {
   }
 
   let task: Task | null;
+  let selectionMode: TaskSelection["mode"] = "pending";
   if (parsed.taskId) {
     task = tasks.find((item) => item.id === parsed.taskId) ?? null;
     if (!task) {
       console.log(`Task not found: ${parsed.taskId}`);
       return 2;
     }
-    if (task.status !== "pending") {
-      console.log(`Task ${parsed.taskId} is not pending (status=${task.status})`);
+    if (!["pending", "blocked", "failed"].includes(task.status)) {
+      console.log(`Task ${parsed.taskId} is not runnable (status=${task.status})`);
       return 2;
     }
+    selectionMode = task.status === "pending" ? "pending" : "retry";
   } else {
-    task = nextTask(tasks);
-    if (!task) {
+    const selected = selectTask(tasks);
+    if (!selected) {
       console.log("No executable pending task");
       return 0;
     }
+    task = selected.task;
+    selectionMode = selected.mode;
   }
 
   const beforeRun = [...rawLines];
   updateTaskStatus(task.id, "in_progress", beforeRun);
   writeTasks(beforeRun);
-  console.log(`Running: ${summarizeTask(task)}`);
+  const attemptLabel = selectionMode === "retry" ? `Retrying: ${task.status} task` : "Running";
+  console.log(`${attemptLabel}: ${summarizeTask(task)}`);
   console.log("\nStarter prompt:\n" + starterPrompt(task) + "\n");
 
   let summary = runTask(task, parsed);
