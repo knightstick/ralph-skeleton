@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import yaml from "js-yaml";
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 type Status = "pending" | "in_progress" | "blocked" | "done" | "failed";
 type CheckType = "command" | "file_exists";
+type FailureCategory = "validation" | "execution" | "environment" | "agent" | "unsupported_check" | "none";
 
 interface Check {
   type?: CheckType | string;
@@ -17,15 +19,14 @@ interface Check {
 
 interface Task {
   id: string;
-  title?: string;
+  title: string;
   status: Status;
   priority: number;
   dependencies: string[];
-  owner?: string;
-  objective?: string;
+  owner: string;
+  objective: string;
   acceptance: Check[];
   notes?: string;
-  rawStatusLine?: number;
 }
 
 interface CheckResult {
@@ -33,6 +34,7 @@ interface CheckResult {
   status: "pass" | "fail" | "skip";
   exit_code: number;
   required: boolean;
+  failure_category: FailureCategory;
   command?: string;
   path?: string;
   output: string;
@@ -43,107 +45,107 @@ interface ProgressEntry {
   task_id: string;
   agent_prompt: string;
   result: "success" | "fail";
+  failure_category: FailureCategory;
   checks: CheckResult[];
   stdout_excerpt: string;
   next: string | null;
   notes: string;
 }
 
+interface RunSummary {
+  result: "pass" | "fail";
+  checks: CheckResult[];
+  failureCategory: FailureCategory;
+}
+
 const REPO_ROOT = resolve(process.cwd());
 const TASKS_PATH = `${REPO_ROOT}/TASKS.md`;
 const PROGRESS_PATH = `${REPO_ROOT}/PROGRESS.md`;
+const VALID_STATUSES: Status[] = ["pending", "in_progress", "blocked", "done", "failed"];
 
 function nowUtc(): string {
   const now = new Date();
   return `${now.toISOString().split(".")[0]}Z`;
 }
 
-function castScalar(raw: string): unknown {
-  const value = raw.trim();
-  if (value.toLowerCase() === "true") return true;
-  if (value.toLowerCase() === "false") return false;
-  const numberMatch = /^-?\d+$/.test(value);
-  if (numberMatch) return Number.parseInt(value, 10);
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function ensureString(value: unknown, field: string, lineRef?: number): string {
+  if (typeof value !== "string" || !value.trim()) {
+    const location = typeof lineRef === "number" ? ` at line ${lineRef}` : "";
+    throw new Error(`Invalid ${field}${location}: expected non-empty string`);
+  }
+  return value.trim();
+}
+
+function ensureInteger(value: unknown, field: string, lineRef?: number): number {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    const location = typeof lineRef === "number" ? ` at line ${lineRef}` : "";
+    throw new Error(`Invalid ${field}${location}: expected integer`);
+  }
   return value;
 }
 
-function parseList(raw: string): string[] {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [];
-  const inner = trimmed.slice(1, -1).trim();
-  if (!inner) return [];
-  return inner.split(",").map((it) => it.trim()).filter(Boolean);
+function ensureStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid ${field}: expected array`);
+  }
+  return value.map((item, idx) => {
+    if (typeof item !== "string") {
+      throw new Error(`Invalid ${field}[${idx}]: expected string`);
+    }
+    return item;
+  });
 }
 
-function parseValue(line: string, lines: string[], idx: number, end: number): [unknown, number] {
-  const valueMatch = line.match(/^\s{2,}[a-zA-Z0-9_]+:\s*(.*)$/);
-  if (!valueMatch) return ["", idx];
-  const value = valueMatch[1] ?? "";
-  if (value !== "|") return [castScalar(value), idx];
-
-  const headerIndent = line.search(/\S/);
-  const contentIndent = headerIndent + 2;
-  const out: string[] = [];
-  let i = idx + 1;
-  while (i < end) {
-    const candidate = lines[i];
-    const candidateIndent = candidate.search(/\S/);
-    if (candidateIndent <= headerIndent) break;
-    if (candidate.trim() === "") {
-      out.push("");
-    } else {
-      out.push(candidate.slice(contentIndent));
-    }
-    i += 1;
-  }
-  return [out.join("\n").replace(/\n+$/u, ""), i - 1];
+function ensureCheckArray(value: unknown, taskId: string): Check[] {
+  if (!Array.isArray(value)) throw new Error(`Invalid acceptance for task ${taskId}: expected array`);
+  return value as Check[];
 }
 
-function parseAcceptance(lines: string[], start: number, end: number): [Check[], number] {
-  const checks: Check[] = [];
-  let i = start + 1;
-  while (i < end) {
-    const line = lines[i];
-    if (/^\s{4}-\s+[a-zA-Z0-9_]+:\s*/.test(line)) {
-      const check: Check = {};
-      const itemMatch = line.match(/^\s{4}-\s+([a-zA-Z0-9_]+):\s*(.*)$/);
-      if (!itemMatch) {
-        i += 1;
-        continue;
-      }
-      const firstKey = itemMatch[1];
-      check[firstKey] = castScalar(itemMatch[2]);
-      i += 1;
-      while (i < end) {
-        const nested = lines[i];
-        if (/^\s{4}-\s+/.test(nested)) break;
-        if (/^\s{2}[a-zA-Z0-9_]+:\s*/.test(nested)) break;
-        if (!nested.trim()) {
-          i += 1;
-          continue;
-        }
-        const nestedMatch = nested.match(/^\s{6}([a-zA-Z0-9_]+):\s*(.*)$/);
-        if (!nestedMatch) {
-          i += 1;
-          continue;
-        }
-        const nestedKey = nestedMatch[1];
-        if (nestedMatch[2] === "|") {
-          const [value, consumed] = parseValue(nested, lines, i, end);
-          check[nestedKey] = value as string;
-          i = consumed;
-        } else {
-          check[nestedKey] = castScalar(nestedMatch[2]);
-        }
-        i += 1;
-      }
-      checks.push(check);
-      continue;
-    }
-    if (/^\s{2}[a-zA-Z0-9_]+:\s*/.test(line)) break;
-    i += 1;
+function validateCheck(check: Check, taskId: string): void {
+  const type = ensureString(check.type ?? "command", `acceptance.type for ${taskId}`);
+  if (!["command", "file_exists"].includes(type)) {
+    throw new Error(`Invalid check type "${type}" for task ${taskId}: unsupported`);
   }
-  return [checks, i - 1];
+  if (type === "command") {
+    ensureString(check.command, `acceptance.command for ${taskId}`);
+  }
+  if (type === "file_exists") {
+    ensureString(check.path, `acceptance.path for ${taskId}`);
+  }
+  if (check.required !== undefined && typeof check.required !== "boolean") {
+    throw new Error(`Invalid acceptance.required for task ${taskId}: expected boolean`);
+  }
+}
+
+function validateTask(rawTask: Record<string, unknown>, lineRef: number): Task {
+  const id = ensureString(rawTask.id, "id", lineRef);
+  const title = ensureString(rawTask.title, "title", lineRef);
+  const status = ensureString(rawTask.status, "status", lineRef) as Status;
+  if (!VALID_STATUSES.includes(status)) throw new Error(`Invalid status "${status}" for task ${id}`);
+
+  const priority = ensureInteger(rawTask.priority, "priority", lineRef);
+  const dependencies = ensureStringArray(rawTask.dependencies ?? [], `dependencies for ${id}`);
+  const owner = ensureString(rawTask.owner, "owner", lineRef);
+  const objective = ensureString(rawTask.objective, "objective", lineRef);
+  const acceptance = ensureCheckArray(rawTask.acceptance, id);
+  for (const check of acceptance) validateCheck(check, id);
+  const notes = typeof rawTask.notes === "string" ? rawTask.notes : "";
+
+  return {
+    id,
+    title,
+    status,
+    priority,
+    dependencies,
+    owner,
+    objective,
+    acceptance,
+    notes,
+  };
 }
 
 export function parseTasks(path: string): [Task[], string[]] {
@@ -151,69 +153,32 @@ export function parseTasks(path: string): [Task[], string[]] {
   const lines = source.split(/\r?\n/);
   const tasks: Task[] = [];
 
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const taskMatch = line.match(/^- id:\s*(.+)$/);
-    if (!taskMatch) {
-      i += 1;
-      continue;
+  const tasksHeader = lines.findIndex((line) => line.trim() === "Tasks");
+  if (tasksHeader === -1) throw new Error("Could not find 'Tasks' section in TASKS.md");
+
+  let firstTask = -1;
+  for (let i = tasksHeader + 1; i < lines.length; i += 1) {
+    if (/^\- id:\s*/.test(lines[i])) {
+      firstTask = i;
+      break;
     }
+  }
+  if (firstTask === -1) return [[], lines];
 
-    const task: Task = {
-      id: taskMatch[1].trim(),
-      status: "pending",
-      priority: 999,
-      dependencies: [],
-      acceptance: [],
-    };
+  const taskStarts: number[] = [];
+  for (let i = firstTask; i < lines.length; i += 1) {
+    if (/^\- id:\s*/.test(lines[i])) taskStarts.push(i);
+  }
 
-    let end = i + 1;
-    while (end < lines.length) {
-      if (/^- id:\s*(.+)$/.test(lines[end])) break;
-      end += 1;
+  for (let i = 0; i < taskStarts.length; i += 1) {
+    const start = taskStarts[i]!;
+    const end = taskStarts[i + 1] ?? lines.length;
+    const block = lines.slice(start, end).join("\n");
+    const loaded = yaml.load(block);
+    if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+      throw new Error(`Invalid task block near line ${start + 1}: not a mapping`);
     }
-
-    let j = i + 1;
-    while (j < end) {
-      const raw = lines[j];
-      const rootMatch = raw.match(/^\s{2}([a-zA-Z0-9_]+):\s*(.*)$/);
-      if (rootMatch) {
-        const key = rootMatch[1];
-        const value = rootMatch[2] ?? "";
-        if (key === "status") {
-          task.status = castScalar(value || "pending") as Status;
-          task.rawStatusLine = j;
-        } else if (key === "priority") {
-          const parsed = castScalar(value);
-          task.priority = typeof parsed === "number" ? parsed : 999;
-        } else if (key === "dependencies") {
-          task.dependencies = parseList(value);
-        } else if (key === "acceptance") {
-          const [checks, consumed] = parseAcceptance(lines, j, end);
-          task.acceptance = checks;
-          j = consumed;
-        } else if (key === "objective" || key === "notes") {
-          if (value === "|") {
-            const [multi, consumed] = parseValue(raw, lines, j, end);
-            if (key === "objective") task.objective = multi as string;
-            if (key === "notes") task.notes = multi as string;
-            j = consumed;
-          } else {
-            if (key === "objective") task.objective = String(castScalar(value));
-            if (key === "notes") task.notes = String(castScalar(value));
-          }
-        } else {
-          const parsed = castScalar(value);
-          if (key === "title" && typeof parsed === "string") task.title = parsed;
-          if (key === "owner" && typeof parsed === "string") task.owner = parsed;
-        }
-      }
-      j += 1;
-    }
-
-    tasks.push(task);
-    i = end;
+    tasks.push(validateTask(loaded as Record<string, unknown>, start + 1));
   }
 
   return [tasks, lines];
@@ -226,13 +191,7 @@ function nextTask(tasks: Task[]): Task | null {
   const ready: Task[] = [];
   for (const task of tasks) {
     if (task.status !== "pending") continue;
-    let blocked = false;
-    for (const dependency of task.dependencies) {
-      if (statusById.get(dependency) !== "done") {
-        blocked = true;
-        break;
-      }
-    }
+    const blocked = task.dependencies.some((dependency) => statusById.get(dependency) !== "done");
     if (!blocked) ready.push(task);
   }
   if (!ready.length) return null;
@@ -243,11 +202,12 @@ function nextTask(tasks: Task[]): Task | null {
 function computeNextAfter(tasks: Task[], doneId: string): string | null {
   const statusById = new Map<string, string>();
   for (const task of tasks) statusById.set(task.id, task.status);
+
   const ready: Task[] = [];
   for (const task of tasks) {
     if (task.id === doneId) continue;
     if (task.status !== "pending") continue;
-    if (task.dependencies.every((d) => statusById.get(d) === "done")) ready.push(task);
+    if (task.dependencies.every((dep) => statusById.get(dep) === "done")) ready.push(task);
   }
   if (!ready.length) return null;
   ready.sort((a, b) => a.priority - b.priority);
@@ -255,9 +215,10 @@ function computeNextAfter(tasks: Task[], doneId: string): string | null {
 }
 
 function updateTaskStatus(taskId: string, status: Status, lines: string[]): void {
+  const idMatcher = new RegExp(`^- id:\\s*${escapeRegExp(taskId)}\\s*$`);
   let inTask = false;
   for (let i = 0; i < lines.length; i += 1) {
-    if (/^- id:\s*/.test(lines[i]) && lines[i].includes(taskId)) {
+    if (idMatcher.test(lines[i])) {
       inTask = true;
       continue;
     }
@@ -265,7 +226,7 @@ function updateTaskStatus(taskId: string, status: Status, lines: string[]): void
       lines[i] = `  status: ${status}`;
       return;
     }
-    if (inTask && /^\s*- id:\s*/.test(lines[i])) {
+    if (inTask && /^\- id:\s*/.test(lines[i])) {
       throw new Error(`Malformed TASKS.md: status missing for task ${taskId}`);
     }
   }
@@ -276,6 +237,13 @@ function writeTasks(lines: string[]): void {
   writeFileSync(TASKS_PATH, `${lines.join("\n")}\n`);
 }
 
+function normalizeCommandOutput(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Buffer) return value.toString("utf8");
+  return String(value);
+}
+
 function runCommand(command: string, timeoutSeconds = 120): CheckResult {
   try {
     const output = execSync(command, {
@@ -284,30 +252,36 @@ function runCommand(command: string, timeoutSeconds = 120): CheckResult {
       stdio: "pipe",
       encoding: "utf8",
       shell: true,
-    }) as string;
+    });
     return {
       name: "command",
       status: "pass",
       exit_code: 0,
       required: true,
+      failure_category: "none",
       command,
-      output: String(output ?? ""),
+      output: normalizeCommandOutput(output),
     };
   } catch (error) {
-    const e = error as { status?: number; stdout?: string; stderr?: string; message?: string };
+    const e = error as { status?: number; code?: string; stdout?: unknown; stderr?: unknown; message?: string };
+    const isMissingDependency =
+      e.code === "ENOENT" || String(e.message ?? "").includes("not found") || String(e.message ?? "").includes("command not found");
     return {
       name: "command",
       status: "fail",
       exit_code: e.status ?? 1,
       required: true,
+      failure_category: isMissingDependency ? "environment" : "execution",
       command,
-      output: [e.stdout ?? "", e.stderr ?? "", e.message ?? ""].filter(Boolean).join("\n"),
+      output: [normalizeCommandOutput(e.stdout), normalizeCommandOutput(e.stderr), e.message ?? ""]
+        .filter(Boolean)
+        .join("\n"),
     };
   }
 }
 
 function runCheck(check: Check): CheckResult {
-  const type = check.type ?? "command";
+  const type = ensureString(check.type ?? "command", `acceptance.type`);
   const required = check.required ?? true;
   if (type === "command") {
     const command = String(check.command ?? "");
@@ -325,6 +299,7 @@ function runCheck(check: Check): CheckResult {
       status: exists ? "pass" : required ? "fail" : "skip",
       exit_code: exists ? 0 : 1,
       required,
+      failure_category: exists ? "none" : required ? "execution" : "none",
       path,
       output: `exists=${exists}`,
     };
@@ -334,7 +309,54 @@ function runCheck(check: Check): CheckResult {
     status: required ? "fail" : "skip",
     exit_code: required ? 1 : 0,
     required,
+    failure_category: required ? "unsupported_check" : "none",
     output: `Unsupported check type: ${String(type)}`,
+  };
+}
+
+function deriveFailureCategoryFromChecks(checks: CheckResult[]): FailureCategory {
+  if (checks.some((check) => check.failure_category === "environment")) return "environment";
+  if (checks.some((check) => check.failure_category === "validation")) return "validation";
+  if (checks.some((check) => check.failure_category === "unsupported_check")) return "unsupported_check";
+  if (checks.some((check) => check.failure_category === "agent")) return "agent";
+  if (checks.some((check) => check.failure_category === "execution")) return "execution";
+  return "none";
+}
+
+function runTask(task: Task, args: CLIArgs): RunSummary {
+  const checks: CheckResult[] = [];
+  if (args.agentCmd) {
+    const agentResult = runCommand(args.agentCmd, Number.parseInt(args.timeout, 10));
+    checks.push({
+      name: "agent_command",
+      status: agentResult.status,
+      exit_code: agentResult.exit_code,
+      required: true,
+      failure_category: agentResult.failure_category === "environment" ? "environment" : "agent",
+      command: args.agentCmd,
+      output: agentResult.output,
+    });
+    if (agentResult.status === "fail") {
+      return {
+        result: "fail",
+        checks,
+        failureCategory: checks.some((check) => check.failure_category === "environment") ? "environment" : "agent",
+      };
+    }
+  }
+
+  for (const check of task.acceptance) {
+    checks.push(runCheck(check));
+  }
+
+  const failedChecks = checks.filter(
+    (check) => check.status !== "pass" && !(check.status === "skip" && !check.required),
+  );
+  const failureCategory = deriveFailureCategoryFromChecks(failedChecks);
+  return {
+    result: failedChecks.length === 0 ? "pass" : "fail",
+    checks,
+    failureCategory: failedChecks.length === 0 ? "none" : failureCategory,
   };
 }
 
@@ -344,16 +366,20 @@ function appendProgress(entry: ProgressEntry): void {
     `  task_id: ${entry.task_id}`,
     `  agent_prompt: ${entry.agent_prompt.replace(/\n/g, " ")}`,
     `  result: ${entry.result}`,
+    `  failure_category: ${entry.failure_category}`,
     "  checks:",
   ];
+
   for (const check of entry.checks) {
     lines.push(`    - name: ${check.name}`);
     lines.push(`      status: ${check.status}`);
     lines.push(`      exit_code: ${check.exit_code}`);
+    lines.push(`      failure_category: ${check.failure_category}`);
     if (check.command) lines.push(`      command: ${check.command}`);
     if (check.path) lines.push(`      path: ${check.path}`);
     lines.push(`      required: ${String(check.required)}`);
   }
+
   if (entry.stdout_excerpt) {
     lines.push("  stdout_excerpt: |");
     for (const ln of entry.stdout_excerpt.split("\n")) lines.push(`    ${ln}`);
@@ -373,29 +399,7 @@ function appendProgress(entry: ProgressEntry): void {
 }
 
 function summarizeTask(task: Task): string {
-  return `${task.id}: ${(task.objective ?? "(no objective)").replace(/\n/g, " ")}`;
-}
-
-function runTask(task: Task, args: CLIArgs): [string, CheckResult[]] {
-  const checks: CheckResult[] = [];
-
-  if (args.agentCmd) {
-    const result = runCommand(args.agentCmd, Number.parseInt(args.timeout, 10));
-    checks.push({
-      name: "agent_command",
-      status: result.status,
-      exit_code: result.exit_code,
-      required: true,
-      command: args.agentCmd,
-      output: result.output,
-    });
-    if (result.status === "fail") return ["fail", checks];
-  }
-
-  for (const check of task.acceptance) checks.push(runCheck(check));
-
-  const passed = checks.every((check) => check.status === "pass" || (check.status === "skip" && !check.required));
-  return [passed ? "pass" : "fail", checks];
+  return `${task.id}: ${task.objective.replace(/\n/g, " ")}`;
 }
 
 function statusReport(tasks: Task[]): string {
@@ -407,10 +411,12 @@ function statusReport(tasks: Task[]): string {
     failed: 0,
     other: 0,
   };
+
   for (const task of tasks) {
     if (task.status in counts) counts[task.status] += 1;
     else counts.other += 1;
   }
+
   const next = nextTask(tasks);
   return [
     `Pending: ${counts.pending}`,
@@ -460,7 +466,7 @@ Usage:
   npm run loop:run
   npm run loop:run -- --task-id T-002
   npm run loop:run -- --agent-cmd "echo done"
-  `.trim();
+`.trim();
   console.log(help);
   process.exit(2);
 }
@@ -469,7 +475,26 @@ function main(): number {
   const parsed = parseArgs(process.argv.slice(2));
   if (!parsed) return printUsage();
 
-  const [tasks, rawLines] = parseTasks(TASKS_PATH);
+  let tasks: Task[] = [];
+  let rawLines: string[] = [];
+  try {
+    [tasks, rawLines] = parseTasks(TASKS_PATH);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    appendProgress({
+      timestamp_utc: nowUtc(),
+      task_id: "unknown",
+      agent_prompt: "TASKS.md validation",
+      result: "fail",
+      failure_category: "validation",
+      checks: [],
+      stdout_excerpt: message.slice(0, 1200),
+      next: null,
+      notes: "Failed while parsing TASKS.md",
+    });
+    console.log(`Validation error: ${message}`);
+    return 1;
+  }
 
   if (parsed.command === "status") {
     console.log(statusReport(tasks));
@@ -500,33 +525,31 @@ function main(): number {
   writeTasks(beforeRun);
   console.log(`Running: ${summarizeTask(task)}`);
 
-  const [iterationResult, checks] = runTask(task, parsed);
-  const newStatus: Status = iterationResult === "pass" ? "done" : "failed";
-  const afterRun = (() => {
-    const [tasksAfter, linesAfter] = parseTasks(TASKS_PATH);
-    return [tasksAfter, linesAfter] as const;
-  })();
-  updateTaskStatus(task.id, newStatus, afterRun[1]);
-  writeTasks(afterRun[1]);
+  const summary = runTask(task, parsed);
+  const newStatus: Status = summary.result === "pass" ? "done" : "failed";
+  const [, updatedLinesAfter] = parseTasks(TASKS_PATH);
+  updateTaskStatus(task.id, newStatus, updatedLinesAfter);
+  writeTasks(updatedLinesAfter);
 
-  const failed = checks.filter((check) => check.status !== "pass");
-  const excerpt = failed[0]?.output || checks.map((c) => `${c.name}=${c.status}`).join(" ");
-  const next = computeNextAfter(afterRun[0], task!.id);
+  const failed = summary.checks.filter((check) => check.status !== "pass");
+  const excerpt = failed[0]?.output || summary.checks.map((check) => `${check.name}=${check.status}`).join(" ");
+  const tasksAfter = tasks.map((item) => (item.id === task?.id ? { ...item, status: newStatus } : item));
+  const next = computeNextAfter(tasksAfter, task.id);
   appendProgress({
     timestamp_utc: nowUtc(),
     task_id: task.id,
-    agent_prompt: task.objective ?? "",
-    result: iterationResult === "pass" ? "success" : "fail",
-    checks,
+    agent_prompt: task.objective,
+    result: summary.result === "pass" ? "success" : "fail",
+    failure_category: summary.result === "pass" ? "none" : summary.failureCategory,
+    checks: summary.checks,
     stdout_excerpt: excerpt.slice(0, 1200),
     next,
     notes: "Completed via ralph-loop.ts",
   });
 
-  console.log(`Result: ${iterationResult === "pass" ? "success" : "fail"}`);
+  console.log(`Result: ${summary.result === "pass" ? "success" : "fail"}`);
   if (next) console.log(`Next task: ${next}`);
-
-  return iterationResult === "pass" ? 0 : 1;
+  return summary.result === "pass" ? 0 : 1;
 }
 
 process.exit(main());
