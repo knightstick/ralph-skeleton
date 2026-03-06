@@ -29,7 +29,9 @@ Execution stack
 - `package.json` scripts:
   - `npm run loop:status` → `STATUS` view.
   - `npm run loop:run` → single-iteration execution.
+  - `npm run once` → alias for single-iteration execution.
   - `npm run typecheck` → static validation of loop implementation.
+  - `npm run loop:status` → queue inspection before execution.
 
 Data flow
 1. Controller reads `TASKS.md` and `PROGRESS.md`.

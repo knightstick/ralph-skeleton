@@ -14,7 +14,12 @@ Loop startup sequence
 4. Read `PROGRESS.md` for last failure context.
 5. Execute only that task.
 6. Record outcome in `PROGRESS.md`.
-7. Prefer running via `npm run loop:run` so task execution stays in TypeScript.
+7. Run via `npm run once` (alias for one TypeScript iteration).
+
+Initial bootstrap
+1. Install dependencies: `npm install`
+2. Verify queue: `npm run loop:status`
+3. Execute one iteration: `npm run once`
 
 Task execution rules
 - Keep scope atomic. If output becomes large or multi-step, split before tasking.
@@ -43,15 +48,19 @@ State update rules
 Failure categories
 - `validation`
   - malformed tasks or missing required fields
+- `unsupported_check`
+  - unsupported check type in TASKS.md
 - `execution`
   - check command failed or timed out
 - `environment`
   - missing binaries/dependencies
+- `agent`
+  - agent command failed
 - `human_decision`
   - ambiguous scope or unsafe assumptions
 
 Default failure policy
-- If `execution` fails and no code change was attempted: retry once then mark `blocked` (manual review).
+- If `execution` fails: retry once in operator's next cycle if command-level and safe, otherwise mark `blocked`.
 - If `validation` fails: stop and fix task format first.
 - If `environment` fails: note remediation commands and mark task `blocked`.
 - If `human_decision` is required: pause with clear notes and request review.
