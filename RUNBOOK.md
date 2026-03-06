@@ -65,4 +65,5 @@ Next action format
 Command examples
 - Check queue: `npm run loop:status`
 - Run one task: `npm run loop:run`
+- Run one iteration (preferred alias): `npm run once`
 - Run explicit task: `npm run loop:run -- --task-id T-002`
