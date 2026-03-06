@@ -58,6 +58,9 @@ interface RunSummary {
   failureCategory: FailureCategory;
 }
 
+const AUTO_RETRYABLE_CATEGORIES: FailureCategory[] = ["execution"];
+const AUTO_RETRY_MESSAGE = "Execution failed; automatically retried once.";
+
 const REPO_ROOT = resolve(process.cwd());
 const TASKS_PATH = `${REPO_ROOT}/TASKS.md`;
 const PROGRESS_PATH = `${REPO_ROOT}/PROGRESS.md`;
@@ -398,6 +401,11 @@ function appendProgress(entry: ProgressEntry): void {
   }
 }
 
+function canAutoRetry(summary: RunSummary, args: CLIArgs): boolean {
+  if (args.agentCmd) return false;
+  return AUTO_RETRYABLE_CATEGORIES.includes(summary.failureCategory);
+}
+
 function summarizeTask(task: Task): string {
   return `${task.id}: ${task.objective.replace(/\n/g, " ")}`;
 }
@@ -525,8 +533,20 @@ function main(): number {
   writeTasks(beforeRun);
   console.log(`Running: ${summarizeTask(task)}`);
 
-  const summary = runTask(task, parsed);
-  const newStatus: Status = summary.result === "pass" ? "done" : "failed";
+  let summary = runTask(task, parsed);
+  let attempts = 1;
+  let notes = "Completed via ralph-loop.ts";
+
+  const retriesAllowed = canAutoRetry(summary, parsed);
+  if (summary.result === "fail" && retriesAllowed) {
+    attempts += 1;
+    console.log("Retrying execution once...");
+    notes = `${AUTO_RETRY_MESSAGE}`;
+    summary = runTask(task, parsed);
+  }
+
+  const finalFailureCategory = summary.result === "pass" ? "none" : summary.failureCategory;
+  const newStatus: Status = summary.result === "pass" ? "done" : attempts > 1 ? "blocked" : "failed";
   const [, updatedLinesAfter] = parseTasks(TASKS_PATH);
   updateTaskStatus(task.id, newStatus, updatedLinesAfter);
   writeTasks(updatedLinesAfter);
@@ -540,11 +560,11 @@ function main(): number {
     task_id: task.id,
     agent_prompt: task.objective,
     result: summary.result === "pass" ? "success" : "fail",
-    failure_category: summary.result === "pass" ? "none" : summary.failureCategory,
+    failure_category: finalFailureCategory,
     checks: summary.checks,
     stdout_excerpt: excerpt.slice(0, 1200),
     next,
-    notes: "Completed via ralph-loop.ts",
+    notes,
   });
 
   console.log(`Result: ${summary.result === "pass" ? "success" : "fail"}`);
